@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+langgraph
+groq
+redis
+apscheduler
+guardrails-ai
+guardrails-ai-toxic-language
+guardrails-ai-detect-pii
+guardrails-ai-valid-length
+langsmith
+python-dotenv
+httpx
+pydantic

@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --paper: #FAFAF7;
+  --surface: #FFFFFF;
+  --line: #E2E0D8;
+  --ink: #1A1A18;
+  --warm: #6B6860;
+  --muted: #9E9B94;
+  --agent-left: #C0392B;
+  --agent-right: #1A3A5C;
+  --agent-econ: #B8860B;
+  --agent-geo: #2E5E3A;
+  --agent-devil: #4A3060;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #121210;
+    --surface: #1C1C1A;
+    --line: #2E2E2A;
+    --ink: #F0EFE8;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dot-pulse {
+    animation: dot-pulse 1s ease-in-out infinite;
+  }
+  .fade-in {
+    animation: fade-in 300ms ease;
+  }
+  .tab-underline {
+    transition: width 150ms ease;
+  }
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
