@@ -67,61 +67,20 @@ itself, capped at two retries before proceeding regardless, so a
 persistently-failing validator can't spin forever. The **moderator** then writes
 the verdict and scores each persona's slant for the bias chart.
 
-### State
+Validation sits at the pipeline boundaries rather than around individual LLM
+calls: toxicity and length on the fetched article in `fetch`, toxicity and PII
+on the generated arguments in `rebuttal`.
 
-```python
-class DebateState(TypedDict):
-    topic: str                  # one-line debatable statement
-    date: str
-    news_context: str           # article text, truncated
-    round: int                  # 1 = opening, 2 = rebuttal
-    arguments: dict             # { "left": "...", "right": "...", ... }
-    rebuttals: dict
-    guardrail_input_pass: bool
-    guardrail_output_pass: bool
-    verdict: str
-    bias_scores: dict           # { "left": 0.72, ... }
-    status: str                 # fetching | debating | rebuttal | done
-```
+The graph runs from two entry points — APScheduler invokes it daily at 7 AM and
+writes the result to Redis, while a browser opening `WS /ws/debate/{id}` streams
+it node by node so arguments appear as each analyst finishes. The opinion agent
+sits outside the graph: a single call that loads a stored debate, classifies
+your submission as AGREE / CHALLENGE / EXPAND, and answers in that mode.
 
-### Guardrails
-
-Validation sits at both ends of the pipeline, not around individual LLM calls:
-
-- **Input** (in `fetch`): toxicity + length on the fetched article, so a
-  poisoned or oversized source never reaches five agents at once.
-- **Output** (in `rebuttal`): toxicity + PII detection over the generated
-  arguments, gating the conditional edge described above.
-
-### Storage
-
-Redis holds the archive, keyed by date and topic slug:
-
-```
-debate:{YYYY-MM-DD}:{topic-slug}     HASH   status, topic, news_context, verdict,
-                                            arguments, rebuttals, bias_scores
-                                     TTL    30 days
-
-opinions:{YYYY-MM-DD}:{topic-slug}:{user_id}
-                                     LIST   { user_opinion, agent_response,
-                                              mode, timestamp }
-                                     TTL    7 days
-```
-
-### Two entry points
-
-The graph runs from either direction:
-
-- **Scheduled** — APScheduler fires daily at 7 AM, invokes the graph, and
-  writes the finished debate to Redis for the archive.
-- **Live** — a browser opens `WS /ws/debate/{id}`, which streams the graph node
-  by node so arguments appear as each analyst finishes rather than in one block
-  at the end.
-
-The **opinion agent** sits outside the graph entirely. It's a single call from
-the REST route that loads a stored debate, classifies your submission as
-AGREE / CHALLENGE / EXPAND, and responds in that mode while citing which
-analyst it's drawing on.
+📐 **[ARCHITECTURE.md](ARCHITECTURE.md)** has the full design — system
+topology, node-by-node reference, state lifecycle, Redis schema, sequence
+diagrams for all three runtime flows, frontend component tree, failure modes,
+and known limitations.
 
 ## Stack
 
