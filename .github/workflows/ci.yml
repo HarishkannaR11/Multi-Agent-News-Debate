@@ -2,8 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main, "claude/**"]
-  pull_request:
+    branches: [main]
+  pull_request:   # feature branches are covered here; a push trigger on them would run everything twice
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -49,7 +49,8 @@ jobs:
           NEXT_TELEMETRY_DISABLED: "1"
 
   docker:
-    # Build both images (no push) so a broken Dockerfile fails the PR, not the deploy.
+    # Build both images (no push) so a broken Dockerfile fails the PR, not the deploy,
+    # then smoke-test the backend image the way it will actually run.
     runs-on: ubuntu-latest
     needs: [backend, frontend]
     steps:
@@ -59,7 +60,7 @@ jobs:
         with:
           context: .
           file: backend/Dockerfile
-          push: false
+          load: true
           tags: counterpoint-backend:ci
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
@@ -70,3 +71,34 @@ jobs:
           tags: counterpoint-frontend:ci
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Backend runs unprivileged
+        run: test "$(docker run --rm counterpoint-backend:ci id -u)" != "0"
+
+      - name: Guardrail models load offline as the runtime user
+        # --network none proves the models were baked in at build time and that the unprivileged
+        # user can read them (the first build passed while these would have failed at runtime).
+        run: |
+          docker run --rm -i --network none counterpoint-backend:ci python - <<'PY'
+          from backend.graph.guardrails.input_guard import check_input
+          from backend.graph.guardrails.output_guard import check_output
+
+          clean = check_input("The committee will vote on the budget proposal on Tuesday.")
+          assert clean.passed, clean
+          toxic = check_input("You are a worthless idiot and everyone hates you, go die.")
+          assert not toxic.passed, toxic
+          pii = check_output("Contact John Smith at john.smith@example.com or 555-123-4567.")
+          assert pii.passed, pii
+          print("PII output guard returned:", pii.text)
+          print("guardrails OK offline")
+          PY
+
+      - name: Backend answers /health
+        run: |
+          docker run -d --name api -p 8000:8000 counterpoint-backend:ci
+          for i in $(seq 1 30); do
+            curl -fsS localhost:8000/health && exit 0
+            sleep 2
+          done
+          docker logs api
+          exit 1
