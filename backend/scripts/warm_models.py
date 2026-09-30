@@ -21,6 +21,12 @@ for package in ("punkt_tab", "punkt"):
     if not nltk.download(package, download_dir=nltk_dir, quiet=True):
         raise SystemExit(f"could not download NLTK package {package!r}")
 
+# The PII detector's URL recogniser downloads the public-suffix list on first use and caches it
+# under TLDEXTRACT_CACHE. Prime that cache now so the runtime never needs the network for it.
+import tldextract  # noqa: E402
+
+tldextract.extract("https://www.example.co.uk/path")
+
 from guardrails import Guard  # noqa: E402  (after NLTK data is in place)
 from guardrails_ai.detect_pii import DetectPII  # noqa: E402
 from guardrails_ai.toxic_language import ToxicLanguage  # noqa: E402

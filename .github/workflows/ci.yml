@@ -79,7 +79,7 @@ jobs:
         # --network none proves the models were baked in at build time and that the unprivileged
         # user can read them (the first build passed while these would have failed at runtime).
         run: |
-          docker run --rm -i --network none counterpoint-backend:ci python - <<'PY'
+          docker run --rm -i --network none counterpoint-backend:ci python - 2>guard-stderr.txt <<'PY'
           from backend.graph.guardrails.input_guard import check_input
           from backend.graph.guardrails.output_guard import check_output
 
@@ -92,6 +92,12 @@ jobs:
           print("PII output guard returned:", pii.text)
           print("guardrails OK offline")
           PY
+          # A traceback that was merely caught still means something tried to reach the network.
+          if grep -q -E "NameResolutionError|Temporary failure in name resolution" guard-stderr.txt; then
+            echo "::error::a guardrail tried to use the network at runtime"
+            cat guard-stderr.txt
+            exit 1
+          fi
 
       - name: Backend answers /health
         run: |

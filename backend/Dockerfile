@@ -8,7 +8,8 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     HF_HOME=/opt/models/hf \
     TORCH_HOME=/opt/models/torch \
-    NLTK_DATA=/opt/models/nltk
+    NLTK_DATA=/opt/models/nltk \
+    TLDEXTRACT_CACHE=/opt/models/tldextract
 
 WORKDIR /app
 
@@ -21,7 +22,7 @@ RUN pip install -r backend/requirements-torch.txt \
 # Guardrails sends usage telemetry to a third-party endpoint unless told not to. It only honours
 # ~/.guardrailsrc, read once at import, so write it before anything imports guardrails
 # (root for the build step below, `app` further down for runtime).
-RUN mkdir -p /opt/models/nltk \
+RUN mkdir -p /opt/models/nltk /opt/models/tldextract \
  && printf 'enable_metrics=false\n' > /root/.guardrailsrc
 
 # Fetch guardrail models now (fails the build if they can't be downloaded).
