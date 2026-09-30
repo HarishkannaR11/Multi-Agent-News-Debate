@@ -1,8 +1,12 @@
 import re
 
+from ..prompts import UNTRUSTED_NOTE, opinion_block
 from ...config import llm
 
-OPINION_SYSTEM = "You are a balanced opinion analyst who deepens the user's thinking about a news debate."
+OPINION_SYSTEM = (
+    "You are a balanced opinion analyst who deepens the user's thinking about a news debate."
+    + UNTRUSTED_NOTE
+)
 
 OPINION_PROMPT = """
 You are a balanced opinion analyst.
@@ -13,9 +17,11 @@ Debate context:
 - Right analyst: {right}
 - Economist: {economist}
 - Geopolitical: {geo}
+- Devil's advocate: {devil}
 - Moderator verdict: {verdict}
 
-User's opinion: {user_opinion}
+User's opinion:
+{user_opinion}
 
 Step 1: Detect mode.
   - AGREE      → user's view aligns with one or more agents
@@ -44,8 +50,9 @@ def handle_opinion(debate: dict, user_opinion: str) -> dict:
         right=args.get("right", ""),
         economist=args.get("economist", ""),
         geo=args.get("geopolitical", ""),
+        devil=args.get("devil", ""),
         verdict=debate.get("verdict", ""),
-        user_opinion=user_opinion,
+        user_opinion=opinion_block(user_opinion),
     )
     response = llm.invoke(system=OPINION_SYSTEM, user=prompt, max_tokens=500)
     match = re.search(r"\[Mode:\s*(AGREE|CHALLENGE|EXPAND)\]", response, re.IGNORECASE)

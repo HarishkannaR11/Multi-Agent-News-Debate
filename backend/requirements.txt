@@ -12,3 +12,4 @@ langsmith
 python-dotenv
 httpx
 pydantic
+tzdata

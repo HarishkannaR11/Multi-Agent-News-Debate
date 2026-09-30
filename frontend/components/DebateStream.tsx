@@ -14,9 +14,14 @@ export function DebateStream({ debateId }: { debateId: string }) {
   const [args, setArgs] = useState<Record<string, string>>({});
   const [verdict, setVerdict] = useState("");
   const [biasScores, setBiasScores] = useState<Record<string, number>>({});
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const ws = connectDebateStream(debateId, (event: DebateStreamEvent) => {
+      if (event.error) {
+        setError(event.message ?? "Debate not found.");
+        return;
+      }
       if (event.status) setStatus(event.status);
       if (event.data) setArgs((prev) => ({ ...prev, ...event.data }));
       if (event.verdict) setVerdict(event.verdict);
@@ -37,6 +42,7 @@ export function DebateStream({ debateId }: { debateId: string }) {
   return (
     <div>
       <AgentStatusDots states={dotStates} />
+      {error && <p className="mt-4 font-sans text-sm text-agents-left">{error}</p>}
       <p className="mt-4 font-sans text-xs uppercase tracking-[0.04em] text-muted">
         {status === "fetching" && "Fetching today's story..."}
         {status === "debating" && "Analysts are drafting opening arguments..."}

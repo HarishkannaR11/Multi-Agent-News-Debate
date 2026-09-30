@@ -48,9 +48,13 @@ export async function submitOpinion(
 }
 
 export type DebateStreamEvent = {
-  node: string;
+  node?: string;
+  error?: string;
+  message?: string;
+  debate_id?: string;
+  rebuttals?: Record<string, string>;
   status?: string;
-  data: Record<string, string>;
+  data?: Record<string, string>;
   verdict?: string;
   bias_scores?: Record<string, number>;
 };

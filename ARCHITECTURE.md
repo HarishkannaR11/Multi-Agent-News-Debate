@@ -611,28 +611,24 @@ container's lifecycle — see limitations.
 
 ## 15. Known limitations
 
-Honest list of what this design doesn't do yet:
+What the design still doesn't do:
 
-1. **Live runs aren't persisted.** `ws.py` streams the graph but never calls
-   `save_debate`, so only the scheduled 07:00 run reaches the archive. A
-   completed-run write in the WS handler would fix it.
-2. **Every WebSocket connection starts a full debate** — 13 LLM calls. There's
-   no check for an existing debate for that date, and `debate_id` from the
-   route is ignored. Two browser tabs mean two full runs.
-3. **Opinion history is write-only.** `get_opinions` exists in the service
-   layer but no route exposes it, so past threads are stored and then
-   unreadable.
-4. **`list_debates` is `SCAN` + N round trips.** Fine for a 30-day window;
-   a sorted set index would be the fix if the archive grows.
-5. **The scheduler doesn't survive horizontal scaling.** Every replica would
-   fire its own 07:00 job. This needs a distributed lock or an external
-   trigger hitting a protected endpoint.
-6. **Guardrail models load at import**, adding ~30s to boot and a few hundred
-   MB of RSS — awkward on small instances and for cold-start platforms.
-7. **`user_id` is client-supplied** (the UI sends `"guest"`). There's no auth,
-   so opinion threads aren't really per-user.
-8. **One topic per day.** `TopicTabs` is built for multiple, but the pipeline
-   fetches a single top headline.
-9. **Round 1 is blind.** Parallel fan-out means the devil's advocate can't read
-   the arguments it's meant to critique until the rebuttal round; serializing
-   it after the other four would cost latency but sharpen it.
+1. **Opinion history has no UI.** `GET /api/opinions/{id}?user_id=` exists, but
+   the frontend doesn't call it, and `user_id` is client-supplied (the UI sends
+   `"guest"`), so threads aren't really per-user until there is auth.
+2. **Opening arguments and the verdict aren't run through the output guardrail** —
+   only rebuttals, user opinions and the opinion reply are.
+3. **News context is short.** NewsAPI/GNews return ~200 characters of `content`;
+   the pipeline doesn't fetch full article text.
+4. **One topic per day.** `TopicTabs` is built for multiple, but the pipeline
+   fetches a single headline.
+5. **Guardrail models are heavy.** They pull torch, transformers and a spaCy
+   model, load lazily on first use (not at import), and need a couple of GB of RAM.
+6. **Replay isn't live streaming.** The WebSocket sends three stage events from
+   the stored debate rather than per-node deltas.
+
+Resolved since the first version: parallel-write crash in the graph, unbounded
+rebuttal retry loop, live runs never persisted / every page load spending 13 LLM
+calls, deprecated Groq models, `SCAN`-based archive listing (now a sorted-set
+index), scheduler duplication across replicas (Redis lock + admin endpoint), and
+the blind devil's advocate (now runs after the other four).

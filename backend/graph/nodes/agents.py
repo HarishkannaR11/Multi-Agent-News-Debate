@@ -1,3 +1,4 @@
+from ..prompts import UNTRUSTED_NOTE, article_block, format_arguments
 from ..state import DebateState
 from ...config import llm
 
@@ -24,21 +25,25 @@ prior arguments — left, right, economist, and geopolitical — by finding
 their weakest assumptions. Be sharp and direct. Max 200 words.""",
 }
 
+# The devil's advocate reads the other four, so it runs after them (see graph.py).
+PARALLEL_PERSONAS = ("left", "right", "economist", "geopolitical")
+
 
 def make_debate_node(persona_key: str):
-    def node(state: DebateState) -> DebateState:
-        system = PERSONAS[persona_key]
-        prior = state.get("arguments", {})
+    system = PERSONAS[persona_key] + UNTRUSTED_NOTE
+
+    def node(state: DebateState) -> dict:
+        prior = format_arguments(state.get("arguments", {}), exclude=persona_key)
         prompt = f"""News topic: {state['topic']}
 
 Article context:
-{state['news_context']}
+{article_block(state['news_context'])}
 
 Prior arguments from other analysts:
-{prior if prior else 'None yet — this is round 1.'}
+{prior or 'None yet — this is round 1.'}
 
 Give your argument now."""
         response = llm.invoke(system=system, user=prompt, max_tokens=400)
-        state.setdefault("arguments", {})[persona_key] = response
-        return state
+        return {"arguments": {persona_key: response}}
+
     return node
