@@ -188,6 +188,11 @@ locally. The Docker image does this for you.
 The relative imports in `backend/` resolve as the `backend.` package, so the
 backend must be started from the `news-debate/` root.
 
+**Turn off Guardrails telemetry.** By default the library reports usage metadata (guard and
+validator names, not the text) to a third-party endpoint. It is only controlled by
+`~/.guardrailsrc`, so run `printf 'enable_metrics=false\n' > ~/.guardrailsrc` (the Docker image
+does this) or `guardrails configure --disable-metrics`. The app logs a warning if it is still on.
+
 **First boot is slow (~1–2 min).** The Guardrails validators pull down a ~45MB
 toxicity model (detoxify/torch) and a ~400MB spaCy model (`en_core_web_lg`, via
 presidio) the first time they're constructed. Both are cached afterwards, so

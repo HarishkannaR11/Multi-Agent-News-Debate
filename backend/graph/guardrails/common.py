@@ -8,6 +8,26 @@ from ...config import settings
 logger = logging.getLogger(__name__)
 
 
+def _warn_if_telemetry_enabled() -> None:
+    """Guardrails reports usage metadata to a third-party endpoint unless disabled.
+
+    It is controlled only by ~/.guardrailsrc (read once, at import), so it cannot be switched
+    off reliably from inside the app; the Docker image writes that file. Locally run
+    `printf 'enable_metrics=false\\n' > ~/.guardrailsrc` or `guardrails configure --disable-metrics`.
+    """
+    try:
+        from guardrails.settings import settings as guardrails_settings
+
+        enabled = guardrails_settings.rc.enable_metrics is True
+    except Exception:  # internals moved; don't break validation over a warning
+        return
+    if enabled:
+        logger.warning(
+            "Guardrails telemetry is ENABLED and reports usage metadata to a third party. "
+            "Disable it with `enable_metrics=false` in ~/.guardrailsrc."
+        )
+
+
 class GuardUnavailable(RuntimeError):
     """The guardrail itself could not run (missing model, hub validator, import error).
 
@@ -38,6 +58,7 @@ class LazyGuard:
 
         try:
             if self._guard is None:
+                _warn_if_telemetry_enabled()
                 self._guard = self._factory()
             from guardrails.errors import ValidationError
 

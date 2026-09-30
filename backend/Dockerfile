@@ -18,6 +18,12 @@ COPY backend/requirements-torch.txt backend/requirements.txt backend/
 RUN pip install -r backend/requirements-torch.txt \
  && pip install -r backend/requirements.txt
 
+# Guardrails sends usage telemetry to a third-party endpoint unless told not to. It only honours
+# ~/.guardrailsrc, read once at import, so write it before anything imports guardrails
+# (root for the build step below, `app` further down for runtime).
+RUN mkdir -p /opt/models/nltk \
+ && printf 'enable_metrics=false\n' > /root/.guardrailsrc
+
 # Fetch guardrail models now (fails the build if they can't be downloaded).
 COPY backend/scripts/warm_models.py backend/scripts/warm_models.py
 RUN python backend/scripts/warm_models.py
@@ -26,7 +32,8 @@ COPY backend backend
 
 # Run unprivileged. The app only needs to read the code and write to the model caches.
 RUN useradd --system --uid 10001 --create-home app \
- && chown -R app /opt/models
+ && printf 'enable_metrics=false\n' > /home/app/.guardrailsrc \
+ && chown -R app /opt/models /home/app/.guardrailsrc
 USER app
 
 ENV LOG_FORMAT=json

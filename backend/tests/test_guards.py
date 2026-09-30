@@ -67,3 +67,27 @@ def test_disabled_guardrails_pass_without_building(monkeypatch):
         raise AssertionError("must not build")
 
     assert LazyGuard("t", factory).check("raw").passed
+
+
+class TestTelemetryWarning:
+    """Uses the real guardrails settings object, so an upstream rename fails this test loudly."""
+
+    @pytest.fixture
+    def rc(self):
+        from guardrails.settings import settings as guardrails_settings
+
+        original = guardrails_settings.rc.enable_metrics
+        yield guardrails_settings.rc
+        guardrails_settings.rc.enable_metrics = original
+
+    def test_warns_when_enabled(self, rc, caplog):
+        rc.enable_metrics = True
+        with caplog.at_level("WARNING"):
+            LazyGuard("t", lambda: FakeGuard(Outcome())).check("x")
+        assert "telemetry is ENABLED" in caplog.text
+
+    def test_silent_when_disabled(self, rc, caplog):
+        rc.enable_metrics = False
+        with caplog.at_level("WARNING"):
+            LazyGuard("t", lambda: FakeGuard(Outcome())).check("x")
+        assert "telemetry" not in caplog.text
