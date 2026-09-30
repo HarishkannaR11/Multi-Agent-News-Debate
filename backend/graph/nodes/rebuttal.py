@@ -1,10 +1,10 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
+from ...config import llm, settings
 from ..guardrails.output_guard import check_output
 from ..prompts import UNTRUSTED_NOTE, format_arguments
 from ..state import DebateState
-from ...config import llm, settings
 from .agents import PERSONAS
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ def rebuttal_node(state: DebateState) -> dict:
     todo = [key for key in PERSONAS if key in state["arguments"] and key not in kept]
 
     with ThreadPoolExecutor(max_workers=max(1, len(todo))) as pool:
-        drafts = dict(zip(todo, pool.map(lambda key: _generate(key, state), todo)))
+        drafts = dict(zip(todo, pool.map(lambda key: _generate(key, state), todo), strict=True))
 
     failed = []
     for key, draft in drafts.items():

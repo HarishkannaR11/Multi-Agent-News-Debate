@@ -1,6 +1,10 @@
 import os
+from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
+
+if TYPE_CHECKING:
+    from groq import Groq
 
 load_dotenv()
 
@@ -39,6 +43,9 @@ class Settings:
     MAX_REBUTTAL_RETRIES = int(os.environ.get("MAX_REBUTTAL_RETRIES", 2))
     GRAPH_RECURSION_LIMIT = int(os.environ.get("GRAPH_RECURSION_LIMIT", 25))
 
+    LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
+    LOG_FORMAT = os.environ.get("LOG_FORMAT", "text")  # "json" for CloudWatch/log shippers
+
     MAX_NEWS_CONTEXT_CHARS = 8000
     MAX_OPINION_CHARS = int(os.environ.get("MAX_OPINION_CHARS", 1000))
     DEBATE_TTL_SECONDS = 60 * 60 * 24 * 30
@@ -65,7 +72,7 @@ class _LLMWrapper:
     module (tests, tooling) needs no API key."""
 
     def __init__(self) -> None:
-        self._client = None
+        self._client: Groq | None = None
 
     def _get_client(self):
         if self._client is None:

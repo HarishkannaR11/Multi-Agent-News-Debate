@@ -7,11 +7,12 @@ from fastapi.responses import JSONResponse
 from redis.exceptions import RedisError
 
 from .config import settings
+from .logging_config import configure_logging
 from .routers import admin, debate, opinion, ws
 from .scheduler import start_scheduler, stop_scheduler
 from .services.redis_service import ping, rebuild_index_if_empty
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+configure_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -60,6 +61,6 @@ async def ready():
     """Readiness: Redis is reachable."""
     try:
         await ping()
-    except Exception:
-        raise HTTPException(status_code=503, detail="Redis unavailable")
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Redis unavailable") from exc
     return {"status": "ready"}

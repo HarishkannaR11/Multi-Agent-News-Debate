@@ -105,7 +105,6 @@ backend/
     ws.py                     WS /ws/debate/{id}
   services/
     redis_service.py          key construction, (de)serialization, TTLs
-    langsmith_service.py      optional trace context manager
 ```
 
 Imports are relative within the `backend.` package, which is why the server
@@ -528,15 +527,15 @@ wrapped in `@media (prefers-reduced-motion: no-preference)`.
 
 ## 11. Observability
 
-LangGraph nodes are auto-instrumented by LangChain's tracing when
-`LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` is set, giving per-node
-latency, token cost, prompt, and completion in LangSmith under
-`LANGCHAIN_PROJECT`.
+LangGraph is auto-instrumented by LangChain's tracing when
+`LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` is set, giving a trace per
+run with per-node latency and input/output state under `LANGCHAIN_PROJECT`.
+Runs are named `daily_debate` and tagged with the date (see `run_config` in
+`graph/graph.py`).
 
-`services/langsmith_service.py` adds an optional `trace_run(name, tags)`
-context manager for tagging a whole run (for example by date and topic slug).
-It degrades to a no-op generator when the SDK is missing or the key is unset,
-so tracing is never a hard dependency.
+The LLM is called through the raw Groq client, which LangSmith does not wrap, so
+individual prompts, completions and token counts are **not** captured; only the
+node-level spans are. Wrapping `llm.invoke` with `langsmith.traceable` would add them.
 
 Worth watching per run: cost per persona, latency per node (the five parallel
 openings should overlap, not serialize), guardrail pass/fail counts, and the

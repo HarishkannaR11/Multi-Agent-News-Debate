@@ -2,8 +2,8 @@ import json
 import logging
 import re
 
-from ..state import DebateState
 from ...config import PERSONA_KEYS, llm
+from ..state import DebateState
 
 logger = logging.getLogger(__name__)
 

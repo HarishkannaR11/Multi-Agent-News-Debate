@@ -1,7 +1,7 @@
 import json
 import re
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import redis.asyncio as redis
 
@@ -23,6 +23,11 @@ def get_redis() -> redis.Redis:
     if _redis is None:
         _redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
     return _redis
+
+
+def _strs(values) -> list[str]:
+    """redis-py is typed as returning bytes|str; we always connect with decode_responses=True."""
+    return [v.decode() if isinstance(v, bytes) else str(v) for v in values]
 
 
 def _debate_key(date: str, topic_slug: str) -> str:
@@ -98,10 +103,10 @@ async def resolve_debate_id(raw: str) -> str | None:
     """
     r = get_redis()
     if raw == "latest":
-        newest = await r.zrevrange(INDEX_KEY, 0, 0)
+        newest = _strs(await r.zrevrange(INDEX_KEY, 0, 0))
         return newest[0] if newest else None
     if _DATE_RE.match(raw):
-        for member in await r.zrevrange(INDEX_KEY, 0, 99):
+        for member in _strs(await r.zrevrange(INDEX_KEY, 0, 99)):
             if member.startswith(f"{raw}:"):
                 return member
         return None
@@ -114,7 +119,7 @@ async def resolve_debate_id(raw: str) -> str | None:
 async def list_debates(offset: int = 0, limit: int = 30) -> list[dict]:
     """Newest-first debate summaries, one index read plus one pipelined fetch."""
     r = get_redis()
-    ids = await r.zrevrange(INDEX_KEY, offset, offset + limit - 1)
+    ids = _strs(await r.zrevrange(INDEX_KEY, offset, offset + limit - 1))
     if not ids:
         return []
     async with r.pipeline(transaction=False) as pipe:
@@ -124,7 +129,7 @@ async def list_debates(offset: int = 0, limit: int = 30) -> list[dict]:
 
     debates = []
     expired = []
-    for debate_id, data in zip(ids, rows):
+    for debate_id, data in zip(ids, rows, strict=True):
         if not data:
             expired.append(debate_id)
             continue
@@ -148,11 +153,11 @@ async def rebuild_index_if_empty() -> int:
     if await r.zcard(INDEX_KEY):
         return 0
     added = 0
-    async for key in r.scan_iter(match="debate:*"):
-        _, date, slug = key.split(":", 2)
+    async for raw_key in r.scan_iter(match="debate:*"):
+        _, date, slug = str(raw_key).split(":", 2)
         if not (_DATE_RE.match(date) and slug):
             continue
-        created = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()
+        created = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC).timestamp()
         await r.zadd(INDEX_KEY, {f"{date}:{slug}": created})
         added += 1
     return added
@@ -161,7 +166,7 @@ async def rebuild_index_if_empty() -> int:
 async def recent_source_urls() -> list[str]:
     r = get_redis()
     await r.zremrangebyscore(SEEN_URLS_KEY, "-inf", time.time() - SEEN_URLS_TTL)
-    return await r.zrange(SEEN_URLS_KEY, 0, -1)
+    return _strs(await r.zrange(SEEN_URLS_KEY, 0, -1))
 
 
 async def acquire_daily_lock(date: str, ttl_seconds: int = 60 * 30) -> bool:

@@ -1,6 +1,7 @@
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any
 
 from ...config import settings
 
@@ -26,10 +27,10 @@ class LazyGuard:
     """Builds a guardrails Guard on first use so importing the app doesn't load
     torch/transformers models (which adds ~30s and hundreds of MB to boot)."""
 
-    def __init__(self, name: str, factory: Callable[[], object]) -> None:
+    def __init__(self, name: str, factory: Callable[[], Any]) -> None:
         self.name = name
         self._factory = factory
-        self._guard = None
+        self._guard: Any = None
 
     def check(self, text: str) -> GuardResult:
         if not settings.GUARDRAILS_ENABLED:

@@ -35,7 +35,7 @@ async def generate_debate(date: str) -> str | None:
     for attempt in range(1, attempts + 1):
         try:
             seen_urls = await recent_source_urls()
-            final_state = await build_graph().ainvoke(new_debate_state(seen_urls), config=run_config())
+            final_state = await build_graph().ainvoke(new_debate_state(seen_urls), config=run_config(date))
             debate_id = await save_debate(final_state["date"], _slugify(final_state["topic"]), final_state)
             await mark_daily_done(date)
             logger.info("Saved debate %s", debate_id)

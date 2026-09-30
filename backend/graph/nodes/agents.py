@@ -1,6 +1,6 @@
+from ...config import llm
 from ..prompts import UNTRUSTED_NOTE, article_block, format_arguments
 from ..state import DebateState
-from ...config import llm
 
 PERSONAS = {
     "left": """You are a progressive policy analyst. You prioritize social

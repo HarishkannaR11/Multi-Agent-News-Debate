@@ -171,7 +171,19 @@ curl -X POST -H "X-Admin-Token: $ADMIN_TOKEN" localhost:8000/internal/run-daily
 ```bash
 pip install -r backend/requirements-dev.txt
 pytest          # uses fakeredis and a stubbed LLM; no API keys or network needed
+ruff check backend && mypy
+cd frontend && npm run typecheck && npm run lint && npm test
 ```
+
+CI (`.github/workflows/ci.yml`) runs all of the above and builds both Docker images.
+
+### Dependencies
+
+`backend/requirements.in` lists the top-level packages; `backend/requirements.txt` is the
+pinned lock generated from it (the exact `uv pip compile` command is in its header).
+The lock deliberately **excludes torch and its CUDA packages**: install CPU torch separately
+with `pip install -r backend/requirements-torch.txt` if you want the real guardrail models
+locally. The Docker image does this for you.
 
 The relative imports in `backend/` resolve as the `backend.` package, so the
 backend must be started from the `news-debate/` root.
@@ -218,6 +230,19 @@ A "Classical Minimalist" newspaper aesthetic — Playfair Display headings, Inte
 body, JetBrains Mono for data; warm off-white paper; no shadows, gradients, or
 rounded corners. Tokens live in `frontend/app/globals.css`, with light/dark
 handled by CSS variables.
+
+## Docker
+
+```bash
+cp .env.example .env            # fill in the keys
+docker compose up --build       # redis + backend :8000 + frontend :3000
+```
+
+`docker-compose.override.yml` (picked up automatically) mounts `./backend` and enables
+`--reload`; use `docker compose -f docker-compose.yml up` for the production-like stack.
+The backend image installs CPU torch and downloads the guardrail models at **build** time
+(large image, slow first build), runs as a non-root user, and has a `/health` healthcheck.
+Set `LOG_FORMAT=json` (the image default) for one-JSON-object-per-line logs.
 
 ## Deploying
 

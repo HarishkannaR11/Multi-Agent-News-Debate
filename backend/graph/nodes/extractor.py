@@ -1,6 +1,6 @@
+from ...config import llm
 from ..prompts import UNTRUSTED_NOTE, article_block
 from ..state import DebateState
-from ...config import llm
 
 EXTRACTOR_SYSTEM = """You distill a news article into a single, debatable
 one-sentence topic statement. Be neutral and specific. Respond with only the

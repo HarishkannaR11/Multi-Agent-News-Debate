@@ -1,7 +1,7 @@
 import re
 
-from ..prompts import UNTRUSTED_NOTE, opinion_block
 from ...config import llm
+from ..prompts import UNTRUSTED_NOTE, opinion_block
 
 OPINION_SYSTEM = (
     "You are a balanced opinion analyst who deepens the user's thinking about a news debate."

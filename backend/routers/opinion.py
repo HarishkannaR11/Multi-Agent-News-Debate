@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -59,19 +59,23 @@ async def submit_opinion(debate_id: str, body: OpinionRequest):
             # generated outside the CORS middleware, so a cross-origin browser sees a
             # network error instead of this message.
             logger.exception("Opinion LLM call failed")
-            raise HTTPException(status_code=502, detail="The debate agents are unavailable. Try again later.")
+            raise HTTPException(
+                status_code=502, detail="The debate agents are unavailable. Try again later."
+            ) from None
         reply = await run_in_threadpool(check_output, result["response"])
         if not reply.passed:
-            raise HTTPException(status_code=502, detail="The response was blocked by the content filter. Try rephrasing.")
-    except GuardUnavailable:
-        raise HTTPException(status_code=503, detail="Content filter unavailable. Try again later.")
+            raise HTTPException(
+                status_code=502, detail="The response was blocked by the content filter. Try rephrasing."
+            )
+    except GuardUnavailable as exc:
+        raise HTTPException(status_code=503, detail="Content filter unavailable. Try again later.") from exc
 
     entry = {
         "user_opinion": opinion,
         "agent_response": reply.text,
         "followup": result["followup"],
         "mode": result["mode"],
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     await append_opinion(date, topic_slug, body.user_id, entry)
     return entry

@@ -2,13 +2,13 @@ from functools import lru_cache
 
 from langgraph.graph import StateGraph
 
-from .state import DebateState
-from .nodes.fetcher import fetch_news_node
-from .nodes.extractor import topic_extractor_node
-from .nodes.agents import PARALLEL_PERSONAS, make_debate_node
-from .nodes.rebuttal import rebuttal_node
-from .nodes.moderator import moderator_node
 from ..config import settings
+from .nodes.agents import PARALLEL_PERSONAS, make_debate_node
+from .nodes.extractor import topic_extractor_node
+from .nodes.fetcher import fetch_news_node
+from .nodes.moderator import moderator_node
+from .nodes.rebuttal import rebuttal_node
+from .state import DebateState
 
 
 def new_debate_state(seen_urls: list[str] | None = None) -> DebateState:
@@ -30,9 +30,14 @@ def new_debate_state(seen_urls: list[str] | None = None) -> DebateState:
     }
 
 
-def run_config() -> dict:
+def run_config(date: str = "") -> dict:
     # Always cap supersteps: a stuck retry loop must fail fast, not burn LLM calls.
-    return {"recursion_limit": settings.GRAPH_RECURSION_LIMIT}
+    # run_name/tags label the trace in LangSmith (no-op when tracing is off).
+    return {
+        "recursion_limit": settings.GRAPH_RECURSION_LIMIT,
+        "run_name": "daily_debate",
+        "tags": ["daily_debate", date] if date else ["daily_debate"],
+    }
 
 
 def route_after_rebuttal(state: DebateState) -> str:

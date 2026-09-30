@@ -1,13 +1,13 @@
 import logging
 import re
-from typing import Callable
+from collections.abc import Callable
 
 import httpx
 
-from ..guardrails.input_guard import check_input
-from ..state import DebateState
 from ...config import settings
 from ...timeutil import today_iso
+from ..guardrails.input_guard import check_input
+from ..state import DebateState
 
 logger = logging.getLogger(__name__)
 

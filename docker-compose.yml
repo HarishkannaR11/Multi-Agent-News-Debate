@@ -1,11 +1,18 @@
+# Production-like stack. `docker compose up --build` also picks up docker-compose.override.yml
+# (dev: bind-mounted code + reload). Use `docker compose -f docker-compose.yml up` to skip it.
+# Requires a .env file: cp .env.example .env and fill in the keys.
 services:
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "6379:6379"
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
 
   backend:
     build:
@@ -18,9 +25,22 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - redis
-    volumes:
-      - ./backend:/app/backend
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # The browser (not the container) calls the API, so this is the host-published port.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
   redis-data:

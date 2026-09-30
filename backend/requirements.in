@@ -1,0 +1,17 @@
+# Top-level runtime dependencies. requirements.txt is the pinned lock generated from this file:
+#   uv pip compile requirements.in -o requirements.txt --python-version 3.11 --no-emit-package torch ...
+# (see the header of requirements.txt for the exact command).
+fastapi
+uvicorn[standard]
+langgraph
+groq
+redis
+apscheduler<4        # AsyncIOScheduler API used in scheduler.py is the 3.x one
+guardrails-ai
+guardrails-ai-toxic-language
+guardrails-ai-detect-pii
+guardrails-ai-valid-length
+python-dotenv
+httpx
+pydantic
+tzdata

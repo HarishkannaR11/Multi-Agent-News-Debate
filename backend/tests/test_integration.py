@@ -45,5 +45,8 @@ class _ModeAwareLLM:
 
     def __call__(self, system, user, max_tokens=1024, fast=False):
         if "opinion analyst" in system:
-            return "[Mode: CHALLENGE]\nRespectfully, the right analyst disagrees.\n\nWhat evidence would change your mind?"
+            return (
+                "[Mode: CHALLENGE]\nRespectfully, the right analyst disagrees.\n\n"
+                "What evidence would change your mind?"
+            )
         return self.inner(system, user, max_tokens, fast)
