@@ -152,3 +152,20 @@ def test_redis_outage_is_503_not_500(client, monkeypatch):
 
     monkeypatch.setattr("backend.routers.debate.list_debates", down)
     assert client.get("/api/debates").status_code == 503
+
+
+def test_llm_failure_is_a_502_with_cors_headers(client, monkeypatch):
+    from backend.config import llm
+
+    def boom(**_):
+        raise RuntimeError("GROQ_API_KEY is not set")
+
+    monkeypatch.setattr(llm, "invoke", boom)
+    r = client.post(
+        f"/api/opinion/{DEBATE_ID}",
+        json={"user_id": "guest", "opinion": "hi"},
+        headers={"Origin": "http://localhost:3000"},
+    )
+    assert r.status_code == 502
+    assert "unavailable" in r.json()["detail"]
+    assert r.headers["access-control-allow-origin"] == "http://localhost:3000"

@@ -1,18 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { fetchDebates, type Debate } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { Header } from "@/components/Header";
+import { fetchDebates, type DebateSummary } from "@/lib/api";
 
 const PAGE_SIZE = 15;
 
 export default function ArchivePage() {
-  const [debates, setDebates] = useState<Debate[]>([]);
+  const [debates, setDebates] = useState<DebateSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
 
-  useEffect(() => {
-    fetchDebates().then(setDebates).catch(() => setDebates([]));
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchDebates()
+      .then(setDebates)
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
   }, []);
+
+  useEffect(load, [load]);
 
   const start = page * PAGE_SIZE;
   const pageDebates = debates.slice(start, start + PAGE_SIZE);
@@ -20,16 +30,28 @@ export default function ArchivePage() {
   const hasNewer = page > 0;
 
   return (
-    <main className="pb-16 pt-10">
-      <h1 className="font-serif text-2xl font-semibold text-ink">Archive</h1>
+    <main className="pb-16">
+      <Header />
+      <h2 className="mt-10 font-serif text-2xl font-semibold text-ink">Past debates</h2>
+
+      {error && (
+        <div role="alert" className="mt-6 font-sans text-sm text-agents-left">
+          {error}{" "}
+          <button onClick={load} className="underline">
+            Retry
+          </button>
+        </div>
+      )}
 
       <table className="mt-6 w-full border-collapse font-sans text-sm">
         <thead>
           <tr className="border-b border-line text-left text-xs uppercase tracking-[0.04em] text-muted">
-            <th className="py-3 pr-4">Date</th>
-            <th className="py-3 pr-4">Topic</th>
-            <th className="py-3 pr-4">Verdict</th>
-            <th className="py-3" />
+            <th scope="col" className="py-3 pr-4">Date</th>
+            <th scope="col" className="py-3 pr-4">Topic</th>
+            <th scope="col" className="py-3 pr-4">Verdict</th>
+            <th scope="col" className="py-3">
+              <span className="sr-only">Open</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -46,8 +68,8 @@ export default function ArchivePage() {
                 {debate.verdict ? `${debate.verdict.slice(0, 120)}...` : "—"}
               </td>
               <td className="py-3">
-                <Link href={`/debate/${debate.id}`} className="text-ink hover:underline">
-                  Read
+                <Link href={`/debate/${encodeURIComponent(debate.id)}`} className="text-ink hover:underline">
+                  Read<span className="sr-only">: {debate.topic}</span>
                 </Link>
               </td>
             </tr>
@@ -55,7 +77,7 @@ export default function ArchivePage() {
           {pageDebates.length === 0 && (
             <tr>
               <td colSpan={4} className="py-6 text-center text-muted">
-                No debates archived yet.
+                {loading ? "Loading..." : error ? "" : "No debates archived yet."}
               </td>
             </tr>
           )}

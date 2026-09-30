@@ -1,4 +1,8 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {};
+const nextConfig = {
+  // Self-contained server bundle for the Docker image.
+  output: "standalone",
+  poweredByHeader: false,
+};
 
 module.exports = nextConfig;

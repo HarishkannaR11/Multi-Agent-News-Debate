@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,6 +18,8 @@ from ..services.redis_service import (
     resolve_debate_id,
 )
 from .deps import enforce_opinion_rate_limit
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["opinion"])
 
@@ -49,7 +52,14 @@ async def submit_opinion(debate_id: str, body: OpinionRequest):
         if not screened.passed:
             raise HTTPException(status_code=422, detail="Your opinion was rejected by the content filter.")
 
-        result = await run_in_threadpool(handle_opinion, debate, screened.text)
+        try:
+            result = await run_in_threadpool(handle_opinion, debate, screened.text)
+        except Exception:
+            # Raise an HTTPException rather than letting a 500 escape: an unhandled 500 is
+            # generated outside the CORS middleware, so a cross-origin browser sees a
+            # network error instead of this message.
+            logger.exception("Opinion LLM call failed")
+            raise HTTPException(status_code=502, detail="The debate agents are unavailable. Try again later.")
         reply = await run_in_threadpool(check_output, result["response"])
         if not reply.passed:
             raise HTTPException(status_code=502, detail="The response was blocked by the content filter. Try rephrasing.")
