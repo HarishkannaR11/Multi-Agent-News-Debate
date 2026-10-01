@@ -1,0 +1,21 @@
+# Backend image build context (repo root)
+.git
+.github
+.claude
+frontend
+docs
+**/__pycache__
+**/*.pyc
+.venv
+venv
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.env
+.env.*
+!.env.example
+backend/tests
+pytest.ini
+pyproject.toml
+*.md
+docker-compose*.yml

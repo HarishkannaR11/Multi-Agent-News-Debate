@@ -1,0 +1,36 @@
+name: Daily debate
+
+# Generates the day's debate on the hosted backend. Free hosts sleep when idle, so an external
+# cron (this) is what wakes the service and triggers the run; see docs/DEPLOY_FREE.md.
+# Needs repository secrets BACKEND_URL and ADMIN_TOKEN. GitHub disables scheduled workflows
+# after 60 days without repository activity; re-enable it from the Actions tab if that happens.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"   # 06:17 UTC; the backend saves under the UTC date
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Generate again even if today's debate already exists"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      BACKEND_URL: ${{ secrets.BACKEND_URL }}
+      ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+      FORCE: ${{ inputs.force && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Not configured
+        if: env.BACKEND_URL == '' || env.ADMIN_TOKEN == ''
+        run: echo "::notice::Set the BACKEND_URL and ADMIN_TOKEN repository secrets to enable the daily run."
+      - name: Generate today's debate
+        if: env.BACKEND_URL != '' && env.ADMIN_TOKEN != ''
+        run: deploy/scripts/trigger_daily.sh

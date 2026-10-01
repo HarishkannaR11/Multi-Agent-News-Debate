@@ -1,5 +1,7 @@
+from ...config import settings
+from ..guarded import generate_guarded
+from ..prompts import UNTRUSTED_NOTE, article_block, format_arguments
 from ..state import DebateState
-from ...config import llm
 
 PERSONAS = {
     "left": """You are a progressive policy analyst. You prioritize social
@@ -24,21 +26,29 @@ prior arguments — left, right, economist, and geopolitical — by finding
 their weakest assumptions. Be sharp and direct. Max 200 words.""",
 }
 
+# The devil's advocate reads the other four, so it runs after them (see graph.py).
+PARALLEL_PERSONAS = ("left", "right", "economist", "geopolitical")
+
 
 def make_debate_node(persona_key: str):
-    def node(state: DebateState) -> DebateState:
-        system = PERSONAS[persona_key]
-        prior = state.get("arguments", {})
+    system = PERSONAS[persona_key] + UNTRUSTED_NOTE
+
+    def node(state: DebateState) -> dict:
+        prior = format_arguments(state.get("arguments", {}), exclude=persona_key)
         prompt = f"""News topic: {state['topic']}
 
 Article context:
-{state['news_context']}
+{article_block(state['news_context'])}
 
 Prior arguments from other analysts:
-{prior if prior else 'None yet — this is round 1.'}
+{prior or 'None yet — this is round 1.'}
 
 Give your argument now."""
-        response = llm.invoke(system=system, user=prompt, max_tokens=400)
-        state.setdefault("arguments", {})[persona_key] = response
-        return state
+        response = generate_guarded(
+            system, prompt, max_tokens=400, retries=settings.MAX_REBUTTAL_RETRIES, label=f"opening[{persona_key}]"
+        )
+        # A persona whose opening never passes the guardrail sits the debate out: it is absent from
+        # `arguments`, so it also gets no rebuttal and no bias score.
+        return {"arguments": {persona_key: response}} if response else {}
+
     return node

@@ -1,0 +1,8 @@
+node_modules
+.next
+.env*
+Dockerfile
+.dockerignore
+*.md
+lib/*.test.ts
+vitest.config.ts

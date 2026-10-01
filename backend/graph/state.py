@@ -1,13 +1,21 @@
-from typing import TypedDict, Optional
+from typing import Annotated, TypedDict
 
 
-class DebateState(TypedDict):
+def merge_dicts(left: dict, right: dict) -> dict:
+    """Reducer so parallel nodes can each contribute keys to the same dict."""
+    return {**(left or {}), **(right or {})}
+
+
+class DebateState(TypedDict, total=False):
     topic: str
     date: str
-    news_context: str           # Raw article text, max 2000 tokens
+    source_url: str
+    seen_urls: list             # article URLs already debated recently; the fetcher skips them
+    news_context: str           # Raw article text, capped at MAX_NEWS_CONTEXT_CHARS
     round: int                  # 1 = opening, 2 = rebuttal
-    arguments: dict             # { "left": "...", "right": "...", ... }
+    arguments: Annotated[dict, merge_dicts]   # { "left": "...", "right": "...", ... }
     rebuttals: dict             # { "left": "...", "right": "...", ... }
+    rebuttal_retries: int
     guardrail_input_pass: bool
     guardrail_output_pass: bool
     verdict: str
