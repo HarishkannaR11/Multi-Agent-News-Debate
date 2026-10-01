@@ -35,6 +35,11 @@ def test_bad_ids_are_404_not_500(client, bad):
     assert client.get(f"/api/debate/{bad}").status_code == 404
 
 
+def test_debates_carry_a_creation_timestamp(client):
+    assert client.get("/api/debate/latest").json()["created_at"].startswith("20")
+    assert client.get("/api/debates").json()[0]["created_at"].startswith("20")
+
+
 def test_list_debates_pagination_validation(client):
     assert len(client.get("/api/debates").json()) == 1
     assert client.get("/api/debates?limit=0").status_code == 422
@@ -93,6 +98,16 @@ class TestOpinion:
         monkeypatch.setattr(settings, "OPINION_RATE_LIMIT", 2)
         codes = [self.post(client).status_code for _ in range(3)]
         assert codes == [200, 200, 429]
+
+    def test_global_hourly_cap_applies_across_users(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "OPINION_GLOBAL_LIMIT_PER_HOUR", 2)
+        codes = [self.post(client, user_id=f"user-{i}").status_code for i in range(3)]
+        assert codes == [200, 200, 429]
+
+    def test_global_cap_can_be_disabled(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "OPINION_GLOBAL_LIMIT_PER_HOUR", 0)
+        monkeypatch.setattr(settings, "OPINION_RATE_LIMIT", 100)
+        assert all(self.post(client).status_code == 200 for _ in range(4))
 
     def test_content_filter_rejection(self, client, monkeypatch):
         from backend.graph.guardrails.common import GuardResult

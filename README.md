@@ -251,10 +251,18 @@ Set `LOG_FORMAT=json` (the image default) for one-JSON-object-per-line logs.
 
 ## Deploying
 
-- **Backend → Railway**: build from `backend/Dockerfile`, set the same env vars
-  as `.env`, attach a Redis instance.
-- **Frontend → Vercel**: import `frontend/`, point `NEXT_PUBLIC_API_URL` and
-  `NEXT_PUBLIC_WS_URL` at the deployed backend.
+**Free, no credit card:** Vercel (frontend) + Hugging Face Space (backend) + Upstash (Redis) +
+a GitHub Actions cron for the daily debate. Step-by-step in
+**[docs/DEPLOY_FREE.md](docs/DEPLOY_FREE.md)**. The relevant pieces:
+
+- `deploy/huggingface/build_bundle.sh` builds the Space repo (Docker image on uid 1000, port 7860).
+- `.github/workflows/deploy-backend.yml` pushes it to your Space; `daily-debate.yml` wakes the
+  backend and generates the day's debate (`deploy/scripts/trigger_daily.sh`).
+- Frontend: import `frontend/` into Vercel and set `NEXT_PUBLIC_API_URL`.
+
+On any other Docker host: run `backend/Dockerfile` with `REDIS_URL` and the keys from
+`.env.example`, and either keep the built-in scheduler (`SCHEDULER_ENABLED=true`) or call
+`POST /internal/run-daily` from a cron. `frontend/Dockerfile` builds the site as a container.
 
 ## Note
 

@@ -48,6 +48,7 @@ def _decode(data: dict) -> dict:
     return {
         "status": data.get("status", ""),
         "date": data.get("date", ""),
+        "created_at": data.get("created_at", ""),
         "topic": data.get("topic", ""),
         "source_url": data.get("source_url", ""),
         "news_context": data.get("news_context", ""),
@@ -72,6 +73,7 @@ async def save_debate(date: str, topic_slug: str, state: dict) -> str:
         pipe.hset(key, mapping={
             "status": state.get("status", ""),
             "date": date,
+            "created_at": datetime.fromtimestamp(now, tz=UTC).isoformat(),
             "topic": state.get("topic", ""),
             "source_url": state.get("source_url", ""),
             "news_context": state.get("news_context", ""),
@@ -137,6 +139,7 @@ async def list_debates(offset: int = 0, limit: int = 30) -> list[dict]:
         debates.append({
             "id": debate_id,
             "date": full["date"] or debate_id.split(":", 1)[0],
+            "created_at": full["created_at"],
             "topic": full["topic"],
             "verdict": full["verdict"],
             "status": full["status"],

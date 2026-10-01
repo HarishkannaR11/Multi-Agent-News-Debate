@@ -20,6 +20,8 @@ class Settings:
     GROQ_MODEL_MAIN = os.environ.get("GROQ_MODEL_MAIN", "openai/gpt-oss-120b")
     GROQ_MODEL_FAST = os.environ.get("GROQ_MODEL_FAST", "openai/gpt-oss-20b")
     GROQ_TIMEOUT_SECONDS = float(os.environ.get("GROQ_TIMEOUT_SECONDS", 60))
+    # The SDK retries 429/5xx with backoff (honouring Retry-After); free tiers rate-limit the parallel calls.
+    GROQ_MAX_RETRIES = int(os.environ.get("GROQ_MAX_RETRIES", 5))
     # gpt-oss models spend part of max_tokens on hidden reasoning, so give them headroom.
     REASONING_TOKEN_HEADROOM = int(os.environ.get("REASONING_TOKEN_HEADROOM", 1024))
     NEWSAPI_KEY = os.environ.get("NEWSAPI_KEY", "")
@@ -53,6 +55,9 @@ class Settings:
 
     OPINION_RATE_LIMIT = int(os.environ.get("OPINION_RATE_LIMIT", 10))
     OPINION_RATE_WINDOW_SECONDS = int(os.environ.get("OPINION_RATE_WINDOW_SECONDS", 60))
+    # Site-wide cap per hour on opinion requests: protects the LLM quota even if every visitor appears
+    # to share one IP (a proxy that hides client addresses). 0 disables it.
+    OPINION_GLOBAL_LIMIT_PER_HOUR = int(os.environ.get("OPINION_GLOBAL_LIMIT_PER_HOUR", 300))
     # Only honour X-Forwarded-For when running behind a trusted proxy (ALB/CloudFront).
     TRUST_PROXY_HEADERS = _bool("TRUST_PROXY_HEADERS", False)
     # Proxies between the client and this app (ALB = 1, CloudFront + ALB = 2). The client IP is
@@ -80,7 +85,11 @@ class _LLMWrapper:
 
             if not settings.GROQ_API_KEY:
                 raise RuntimeError("GROQ_API_KEY is not set")
-            self._client = Groq(api_key=settings.GROQ_API_KEY, timeout=settings.GROQ_TIMEOUT_SECONDS)
+            self._client = Groq(
+                api_key=settings.GROQ_API_KEY,
+                timeout=settings.GROQ_TIMEOUT_SECONDS,
+                max_retries=settings.GROQ_MAX_RETRIES,
+            )
         return self._client
 
     def invoke(self, system: str, user: str, max_tokens: int = 1024, fast: bool = False) -> str:

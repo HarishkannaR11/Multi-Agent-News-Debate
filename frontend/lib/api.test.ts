@@ -4,6 +4,7 @@ import {
   apiBase,
   connectDebateStream,
   fetchDebate,
+  fetchOpinions,
   reconnectDelayMs,
   submitOpinion,
   wsBase,
@@ -64,6 +65,12 @@ describe("requests", () => {
     respond(200, {});
     await fetchDebate("2026-09-30:some-topic");
     expect(vi.mocked(fetch).mock.calls[0][0]).toBe("/api/debate/2026-09-30%3Asome-topic");
+  });
+
+  it("encodes both the debate id and the user id when loading opinion history", async () => {
+    respond(200, []);
+    await fetchOpinions("2026-09-30:some-topic", "u-1");
+    expect(vi.mocked(fetch).mock.calls[0][0]).toBe("/api/opinions/2026-09-30%3Asome-topic?user_id=u-1");
   });
 
   it("surfaces the server's detail message", async () => {

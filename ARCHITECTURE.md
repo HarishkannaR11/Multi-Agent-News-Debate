@@ -612,11 +612,12 @@ container's lifecycle — see limitations.
 
 What the design still doesn't do:
 
-1. **Opinion history has no UI.** `GET /api/opinions/{id}?user_id=` exists, but
-   the frontend doesn't call it, and `user_id` is client-supplied (the UI sends
-   `"guest"`), so threads aren't really per-user until there is auth.
-2. **Opening arguments and the verdict aren't run through the output guardrail** —
-   only rebuttals, user opinions and the opinion reply are.
+1. **`user_id` is client-supplied.** The UI shows a user's earlier opinions on a
+   debate, keyed by a random per-browser id, but there is no authentication: anyone
+   can send any id, so threads are a convenience, not private.
+2. **Output guardrail failures degrade, not fail.** A persona whose opening never
+   passes sits the debate out, failing rebuttals are dropped, and a blocked verdict is
+   replaced by fixed fallback text. Only a debate with zero passing openings is an error.
 3. **News context is short.** NewsAPI/GNews return ~200 characters of `content`;
    the pipeline doesn't fetch full article text.
 4. **One topic per day.** `TopicTabs` is built for multiple, but the pipeline

@@ -31,19 +31,25 @@ RUN python backend/scripts/warm_models.py
 
 COPY backend backend
 
+# Declared this late on purpose: changing them (see deploy/huggingface) only invalidates the layers
+# below, not the multi-GB dependency and model layers above.
+ARG APP_UID=10001
+ARG PORT=8000
+ENV PORT=${PORT}
+
 # Run unprivileged. The app only needs to read the code and write to the model caches.
-RUN useradd --system --uid 10001 --create-home app \
+RUN useradd --system --uid ${APP_UID} --create-home app \
  && printf 'enable_metrics=false\n' > /home/app/.guardrailsrc \
  && chown -R app /opt/models /home/app/.guardrailsrc
 USER app
 
 ENV LOG_FORMAT=json
-EXPOSE 8000
+EXPOSE ${PORT}
 
 # stdlib only, so the image needs no curl. Start period covers loading the torch models.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
-  CMD ["python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
+  CMD ["python", "-c", "import os, sys, urllib.request as u; sys.exit(0 if u.urlopen(f\"http://127.0.0.1:{os.environ['PORT']}/health\", timeout=4).status == 200 else 1)"]
 
 # One worker on purpose: the in-process scheduler and guardrail models are per-process.
 # (The Redis lock keeps the daily job idempotent if you run more than one task.)
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["sh", "-c", "exec uvicorn backend.main:app --host 0.0.0.0 --port ${PORT} --workers 1"]

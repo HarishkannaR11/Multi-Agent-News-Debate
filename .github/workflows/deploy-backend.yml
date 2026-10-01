@@ -1,0 +1,48 @@
+name: Deploy backend (Hugging Face Space)
+
+# Pushes the backend to a free Hugging Face Docker Space, which builds and runs the image.
+# One-time setup is in docs/DEPLOY_FREE.md. Needs repository secrets:
+#   HF_TOKEN  a Hugging Face access token with write access
+#   HF_SPACE  the Space id, e.g. your-username/counterpoint-api
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "deploy/huggingface/**"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_SPACE: ${{ secrets.HF_SPACE }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Not configured
+        if: env.HF_TOKEN == '' || env.HF_SPACE == ''
+        run: echo "::notice::Set the HF_TOKEN and HF_SPACE repository secrets to enable deployment."
+      - name: Build the Space bundle
+        if: env.HF_TOKEN != '' && env.HF_SPACE != ''
+        run: deploy/huggingface/build_bundle.sh "$RUNNER_TEMP/space"
+      - name: Push to the Space
+        if: env.HF_TOKEN != '' && env.HF_SPACE != ''
+        working-directory: ${{ runner.temp }}/space
+        run: |
+          git init -q -b main
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Deploy ${GITHUB_SHA}"
+          # The Space repo is generated, so its history is replaced on every deploy.
+          git push --force "https://${HF_SPACE%%/*}:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" main

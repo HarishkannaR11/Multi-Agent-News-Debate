@@ -18,3 +18,7 @@ async def enforce_opinion_rate_limit(request: Request) -> None:
     )
     if not allowed:
         raise HTTPException(status_code=429, detail="Too many requests. Try again shortly.")
+    if settings.OPINION_GLOBAL_LIMIT_PER_HOUR and not await rate_limit_allow(
+        "opinion:global", settings.OPINION_GLOBAL_LIMIT_PER_HOUR, 3600
+    ):
+        raise HTTPException(status_code=429, detail="The debate agents are busy right now. Try again later.")

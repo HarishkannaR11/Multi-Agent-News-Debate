@@ -1,4 +1,5 @@
-from ...config import llm
+from ...config import settings
+from ..guarded import generate_guarded
 from ..prompts import UNTRUSTED_NOTE, article_block, format_arguments
 from ..state import DebateState
 
@@ -43,7 +44,11 @@ Prior arguments from other analysts:
 {prior or 'None yet — this is round 1.'}
 
 Give your argument now."""
-        response = llm.invoke(system=system, user=prompt, max_tokens=400)
-        return {"arguments": {persona_key: response}}
+        response = generate_guarded(
+            system, prompt, max_tokens=400, retries=settings.MAX_REBUTTAL_RETRIES, label=f"opening[{persona_key}]"
+        )
+        # A persona whose opening never passes the guardrail sits the debate out: it is absent from
+        # `arguments`, so it also gets no rebuttal and no bias score.
+        return {"arguments": {persona_key: response}} if response else {}
 
     return node

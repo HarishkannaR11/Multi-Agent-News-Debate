@@ -103,6 +103,15 @@ export function submitOpinion(debateId: string, userId: string, opinion: string)
   );
 }
 
+/** The user's earlier opinions on this debate, oldest first. */
+export function fetchOpinions(debateId: string, userId: string): Promise<OpinionResponse[]> {
+  return request(
+    `/api/opinions/${encodeURIComponent(debateId)}?user_id=${encodeURIComponent(userId)}`,
+    undefined,
+    "Failed to load your earlier opinions"
+  );
+}
+
 export type DebateStreamEvent = {
   node?: string;
   error?: string;

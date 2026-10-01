@@ -1,19 +1,33 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ApiError, MAX_OPINION_CHARS, submitOpinion, type OpinionResponse } from "@/lib/api";
+import { ApiError, MAX_OPINION_CHARS, fetchOpinions, submitOpinion, type OpinionResponse } from "@/lib/api";
 import { getAnonymousUserId } from "@/lib/user";
 import { OpinionResponseView } from "./OpinionResponse";
 
 export function OpinionBox({ debateId }: { debateId: string }) {
   const [userId, setUserId] = useState<string | null>(null);
   const [opinion, setOpinion] = useState("");
-  const [response, setResponse] = useState<OpinionResponse | null>(null);
+  const [thread, setThread] = useState<OpinionResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // localStorage only exists in the browser, so resolve the id after mount.
   useEffect(() => setUserId(getAnonymousUserId()), []);
+
+  // Earlier takes on this debate. Best effort: the box works without them.
+  useEffect(() => {
+    if (userId === null) return;
+    let cancelled = false;
+    fetchOpinions(debateId, userId)
+      .then((history) => {
+        if (!cancelled) setThread(history);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [debateId, userId]);
 
   const canSubmit = !loading && userId !== null && opinion.trim().length > 0;
 
@@ -22,7 +36,9 @@ export function OpinionBox({ debateId }: { debateId: string }) {
     setLoading(true);
     setError(null);
     try {
-      setResponse(await submitOpinion(debateId, userId, opinion.trim()));
+      const entry = await submitOpinion(debateId, userId, opinion.trim());
+      setThread((prev) => [...prev, entry]);
+      setOpinion("");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
     } finally {
@@ -63,7 +79,18 @@ export function OpinionBox({ debateId }: { debateId: string }) {
           {error}
         </p>
       )}
-      {response && <OpinionResponseView response={response} />}
+      {thread.length > 0 && (
+        <ol aria-label="Your conversation" className="mt-8 flex flex-col gap-10">
+          {[...thread].reverse().map((entry) => (
+            <li key={entry.timestamp}>
+              <p className="border-l-2 border-ink pl-4 font-sans text-sm italic text-warm">
+                You: {entry.user_opinion}
+              </p>
+              <OpinionResponseView response={entry} />
+            </li>
+          ))}
+        </ol>
+      )}
     </section>
   );
 }

@@ -108,3 +108,25 @@ jobs:
           done
           docker logs api
           exit 1
+
+      # The free-hosting variant: same image, but uid 1000 and port 7860 as Hugging Face Spaces require.
+      - name: Assemble the Hugging Face Space bundle
+        run: |
+          bash -n deploy/scripts/trigger_daily.sh
+          deploy/huggingface/build_bundle.sh "$RUNNER_TEMP/space"
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ runner.temp }}/space
+          load: true
+          tags: counterpoint-space:ci
+          cache-from: type=gha,scope=backend
+      - name: Space image runs as uid 1000 and answers on 7860
+        run: |
+          test "$(docker run --rm counterpoint-space:ci id -u)" = "1000"
+          docker run -d --name space -p 7860:7860 counterpoint-space:ci
+          for i in $(seq 1 30); do
+            curl -fsS localhost:7860/health && exit 0
+            sleep 2
+          done
+          docker logs space
+          exit 1

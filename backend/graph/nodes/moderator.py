@@ -2,7 +2,8 @@ import json
 import logging
 import re
 
-from ...config import PERSONA_KEYS, llm
+from ...config import PERSONA_KEYS, llm, settings
+from ..guarded import generate_guarded
 from ..state import DebateState
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,10 @@ Respond with ONLY a JSON object mapping persona key to a float, e.g.
 {"left": 0.7, "right": 0.65, "economist": 0.2, "geopolitical": 0.3, "devil": 0.4}"""
 
 BIAS_ATTEMPTS = 2
+VERDICT_FALLBACK = (
+    "The moderator's verdict could not be published because it did not pass the content checks. "
+    "Read the five arguments and rebuttals above and weigh them for yourself."
+)
 
 
 def _transcript(state: DebateState) -> str:
@@ -53,10 +58,17 @@ def parse_bias_scores(raw: str) -> dict[str, float]:
 
 
 def moderator_node(state: DebateState) -> dict:
+    if not state.get("arguments"):
+        raise RuntimeError("No analyst argument passed the output guardrail; nothing to moderate")
     transcript = _transcript(state)
 
     verdict_prompt = f"Topic: {state['topic']}\n\nFull debate transcript:\n{transcript}\n\nWrite the verdict now."
-    verdict = llm.invoke(system=MODERATOR_SYSTEM, user=verdict_prompt, max_tokens=500)
+    verdict = generate_guarded(
+        MODERATOR_SYSTEM, verdict_prompt, max_tokens=500, retries=settings.MAX_REBUTTAL_RETRIES, label="verdict"
+    )
+    if verdict is None:
+        logger.warning("Verdict never passed the output guardrail; publishing the fallback text")
+        verdict = VERDICT_FALLBACK
 
     bias_prompt = f"Debate transcript:\n{transcript}"
     scores: dict[str, float] = {}
