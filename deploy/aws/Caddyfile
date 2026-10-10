@@ -1,0 +1,21 @@
+{
+	# TLS is terminated by CloudFront; this listens on plain HTTP only.
+	auto_https off
+	servers {
+		# Keep the X-Forwarded-For chain CloudFront built instead of replacing it, so the backend can
+		# rate-limit real clients (TRUSTED_PROXY_HOPS=2 in docker-compose.yml). The server's firewall
+		# only exposes port 80; a direct caller could spoof the header, which the global opinion cap
+		# and the admin token still cover.
+		trusted_proxies static 0.0.0.0/0 ::/0
+	}
+}
+
+:80 {
+	@backend path /api/* /ws/* /internal/* /health /health/*
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

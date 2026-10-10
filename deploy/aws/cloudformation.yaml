@@ -1,0 +1,234 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Counterpoint on one EC2 server (Redis + backend + frontend behind Caddy) with HTTPS from CloudFront.
+  Create it from the CloudFormation console; see docs/DEPLOY_AWS.md.
+
+Parameters:
+  GroqApiKey:
+    Type: String
+    NoEcho: true
+    AllowedPattern: "^[A-Za-z0-9_-]{10,}$"
+    ConstraintDescription: "Paste the Groq API key (letters, digits, - and _ only)."
+    Description: Groq API key (console.groq.com).
+  NewsApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    AllowedPattern: "^[A-Za-z0-9_-]*$"
+    Description: NewsAPI key. Provide this or the GNews key (or both).
+  GNewsApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    AllowedPattern: "^[A-Za-z0-9_-]*$"
+    Description: GNews key. Provide this or the NewsAPI key (or both).
+  AdminToken:
+    Type: String
+    NoEcho: true
+    AllowedPattern: "^[A-Za-z0-9_-]{24,}$"
+    ConstraintDescription: "At least 24 characters: letters, digits, - and _ only."
+    Description: A long random string that protects the "generate debate" endpoint.
+  AlertEmail:
+    Type: String
+    AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    Description: Email that receives a warning when spending approaches the monthly budget.
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 40
+    MinValue: 5
+    Description: Monthly spend (USD) that triggers the warning emails.
+  InstanceType:
+    Type: String
+    Default: c7i-flex.large
+    AllowedValues: [c7i-flex.large, m7i-flex.large, t3.medium, t3.large]
+    Description: >-
+      Needs 4 GB of RAM or more. On an AWS "Free plan" account pick one the EC2 console marks
+      "Free tier eligible" in your region (c7i-flex.large or m7i-flex.large); t3.* works on a Paid plan.
+  RepoUrl:
+    Type: String
+    Default: https://github.com/HarishkannaR11/Multi-Agent-News-Debate.git
+    Description: Public Git repository to deploy.
+  GitRef:
+    Type: String
+    Default: main
+    Description: Branch or tag to deploy. Merge the pull request into main first, or enter its branch name.
+  ImageId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+    Description: Ubuntu 24.04 LTS (looked up automatically for the region you create the stack in).
+
+Conditions:
+  IsUsEast1: !Equals [!Ref "AWS::Region", us-east-1]
+
+Resources:
+  # --- secrets: kept out of the instance's user data; the server reads them at boot -------------
+  AppSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Counterpoint API keys and admin token
+      SecretString: !Sub |-
+        {"GROQ_API_KEY": "${GroqApiKey}", "NEWSAPI_KEY": "${NewsApiKey}", "GNEWS_API_KEY": "${GNewsApiKey}", "ADMIN_TOKEN": "${AdminToken}"}
+
+  # --- access: no SSH. Use Session Manager (EC2 console -> Connect -> Session Manager) ------------
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: ReadAppSecret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref AppSecret
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  # --- network: only HTTP in (CloudFront talks to the origin over HTTP) -------------------------
+  ServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Counterpoint server - HTTP only, no SSH
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP (from CloudFront)
+
+  Server:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds: [!GetAtt ServerSecurityGroup.GroupId]
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 30
+            VolumeType: gp3
+            DeleteOnTermination: true
+      MetadataOptions:
+        HttpTokens: required
+      Tags:
+        - { Key: Name, Value: counterpoint }
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          exec > >(tee -a /var/log/counterpoint-bootstrap.log) 2>&1
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -y
+          apt-get install -y git
+          # Saved so `update.sh` can be re-run later without remembering them.
+          printf 'export SECRET_ID=%s\nexport AWS_REGION=%s\n' '${AppSecret}' '${AWS::Region}' > /etc/counterpoint.env
+          mkdir -p /opt/counterpoint
+          git clone --depth 1 --branch '${GitRef}' '${RepoUrl}' /opt/counterpoint/app
+          . /etc/counterpoint.env
+          /opt/counterpoint/app/deploy/aws/bootstrap.sh
+
+  # A fixed address, so stopping and starting the server (to save credits) doesn't break CloudFront.
+  ServerIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - { Key: Name, Value: counterpoint }
+
+  ServerIpAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt ServerIp.AllocationId
+      InstanceId: !Ref Server
+
+  # --- HTTPS in front: CloudFront default domain, WebSockets work, nothing cached for the app ----
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    DependsOn: ServerIpAssociation
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Counterpoint
+        PriceClass: PriceClass_100
+        HttpVersion: http2
+        Origins:
+          - Id: server
+            # The EIP's public DNS name: ec2-<a>-<b>-<c>-<d>.compute-1.amazonaws.com (us-east-1)
+            # or ec2-<a>-<b>-<c>-<d>.<region>.compute.amazonaws.com (every other region).
+            DomainName: !Join
+              - ""
+              - - ec2-
+                - !Join ["-", !Split [".", !Ref ServerIp]]
+                - !If [IsUsEast1, ".compute-1.amazonaws.com", !Sub ".${AWS::Region}.compute.amazonaws.com"]
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+              HTTPPort: 80
+              OriginReadTimeout: 60
+              OriginKeepaliveTimeout: 60
+        DefaultCacheBehavior:
+          TargetOriginId: server
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+          Compress: true
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad          # Managed-CachingDisabled
+          OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3  # Managed-AllViewer
+        CacheBehaviors:
+          - PathPattern: /_next/static/*   # content-hashed build assets: safe to cache
+            TargetOriginId: server
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6        # Managed-CachingOptimized
+
+  # --- cost guard-rail --------------------------------------------------------------------------
+  Budget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub "${AWS::StackName}-monthly"
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUsd
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - { SubscriptionType: EMAIL, Address: !Ref AlertEmail }
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - { SubscriptionType: EMAIL, Address: !Ref AlertEmail }
+
+Outputs:
+  SiteUrl:
+    Description: Your site. Give the server 10-15 minutes after the stack finishes creating.
+    Value: !Sub "https://${Distribution.DomainName}"
+  HealthCheck:
+    Description: Shows {"status":"ready"} once the backend is up.
+    Value: !Sub "https://${Distribution.DomainName}/health/ready"
+  InstanceId:
+    Description: Open this instance in the EC2 console and use Connect -> Session Manager to run commands.
+    Value: !Ref Server
+  BootstrapLog:
+    Description: Command to follow the first-boot progress (run in Session Manager).
+    Value: sudo tail -f /var/log/counterpoint-bootstrap.log

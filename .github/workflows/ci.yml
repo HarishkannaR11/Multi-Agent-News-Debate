@@ -67,7 +67,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: frontend
-          push: false
+          load: true
           tags: counterpoint-frontend:ci
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
@@ -130,3 +130,21 @@ jobs:
           done
           docker logs space
           exit 1
+
+      # The AWS deployment shape: Redis + backend + frontend behind the Caddy router, run from the
+      # images built above exactly as deploy/aws/docker-compose.yml starts them on the server.
+      - name: Start the full stack (compose)
+        run: |
+          docker rm -f api space
+          pip install --quiet websockets
+          printf '%s\n' \
+            'GROQ_API_KEY=ci-not-a-real-key' \
+            'ADMIN_TOKEN=ci-admin-token-ci-admin-token' \
+            'OPINION_RATE_LIMIT=2' \
+            'OPINION_GLOBAL_LIMIT_PER_HOUR=0' > deploy/aws/.env
+          cd deploy/aws
+          BACKEND_IMAGE=counterpoint-backend:ci FRONTEND_IMAGE=counterpoint-frontend:ci \
+            docker compose up -d --no-build
+      - name: Stack smoke test (routing, WebSocket, rate limiting through the proxy)
+        run: |
+          deploy/aws/smoke_test.sh || { docker compose -f deploy/aws/docker-compose.yml logs --tail 80; exit 1; }

@@ -1,3 +1,10 @@
+> **Update: Hugging Face now charges for Docker Spaces.** When this guide was written I
+> expected the backend to run on a free Docker Space; creating one now shows *"Docker Spaces
+> require a paid plan"* (Hugging Face PRO, about $9/month), and only Static Spaces are free. The
+> frontend (Vercel) and Redis (Upstash) parts still work as described, but the **backend** section
+> only works with a PRO subscription. If you have AWS credits, use **[DEPLOY_AWS.md](DEPLOY_AWS.md)**
+> instead: it runs everything on one server and needs no Hugging Face, Vercel or Upstash.
+
 # Free deployment
 
 Everything below runs on free tiers with no credit card. The only thing you pay is your own time

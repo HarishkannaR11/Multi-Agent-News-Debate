@@ -1,0 +1,59 @@
+# The whole app on one server: Redis, backend, frontend, and Caddy routing them behind one port.
+# CloudFront (HTTPS) sits in front of Caddy, so the browser sees a single origin: no CORS, no
+# mixed content, and the frontend's same-origin defaults just work.
+#
+# Run from this directory. Needs a .env next to it (deploy/aws/bootstrap.sh writes it from Secrets
+# Manager; for a local trial: GROQ_API_KEY=... NEWSAPI_KEY=... ADMIN_TOKEN=... in .env).
+name: counterpoint
+
+services:
+  redis:
+    image: redis:7-alpine
+    # Cap memory so Redis can never starve the backend; expiring keys (debates, opinions) go first.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    image: ${BACKEND_IMAGE:-counterpoint-backend:local}
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      SCHEDULER_ENABLED: "true"        # the server never sleeps, so the built-in daily job is enough
+      # Client -> CloudFront -> Caddy -> backend: the real client is two hops from the right of
+      # X-Forwarded-For (Caddy appends CloudFront's address; CloudFront appended the client's).
+      TRUST_PROXY_HEADERS: "true"
+      TRUSTED_PROXY_HOPS: "2"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-counterpoint-frontend:local}
+    build:
+      context: ../../frontend           # NEXT_PUBLIC_* left empty on purpose: same-origin
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+volumes:
+  redis-data:

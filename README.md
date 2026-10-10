@@ -251,18 +251,16 @@ Set `LOG_FORMAT=json` (the image default) for one-JSON-object-per-line logs.
 
 ## Deploying
 
-**Free, no credit card:** Vercel (frontend) + Hugging Face Space (backend) + Upstash (Redis) +
-a GitHub Actions cron for the daily debate. Step-by-step in
-**[docs/DEPLOY_FREE.md](docs/DEPLOY_FREE.md)**. The relevant pieces:
-
-- `deploy/huggingface/build_bundle.sh` builds the Space repo (Docker image on uid 1000, port 7860).
-- `.github/workflows/deploy-backend.yml` pushes it to your Space; `daily-debate.yml` wakes the
-  backend and generates the day's debate (`deploy/scripts/trigger_daily.sh`).
-- Frontend: import `frontend/` into Vercel and set `NEXT_PUBLIC_API_URL`.
-
-On any other Docker host: run `backend/Dockerfile` with `REDIS_URL` and the keys from
-`.env.example`, and either keep the built-in scheduler (`SCHEDULER_ENABLED=true`) or call
-`POST /internal/run-daily` from a cron. `frontend/Dockerfile` builds the site as a container.
+- **AWS (using credits): [docs/DEPLOY_AWS.md](docs/DEPLOY_AWS.md).** One CloudFormation form creates
+  a single EC2 server running Redis, backend and frontend behind Caddy, with HTTPS from CloudFront
+  (`deploy/aws/`). Not free for long: expect roughly $35–65/month, which your credits cover for a
+  few months, with a budget alert built in.
+- **Vercel + Hugging Face Space + Upstash: [docs/DEPLOY_FREE.md](docs/DEPLOY_FREE.md).** Hugging
+  Face now requires its paid PRO plan for Docker Spaces, so the backend part is no longer free.
+- **Any Docker host:** run `backend/Dockerfile` with `REDIS_URL` and the keys from `.env.example`
+  (it needs about 4 GB of RAM for the content filters), and `frontend/Dockerfile` for the site.
+  Either keep the built-in scheduler (`SCHEDULER_ENABLED=true`) or call
+  `POST /internal/run-daily` from a cron. `deploy/aws/docker-compose.yml` is a complete example.
 
 ## Note
 
