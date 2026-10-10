@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:   # feature branches are covered here; a push trigger on them would run everything twice
+  workflow_dispatch:   # manual run for a branch that has no open pull request
 
 concurrency:
   group: ci-${{ github.ref }}

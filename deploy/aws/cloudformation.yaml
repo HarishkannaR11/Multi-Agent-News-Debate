@@ -50,8 +50,10 @@ Parameters:
     Description: Public Git repository to deploy.
   GitRef:
     Type: String
-    Default: main
-    Description: Branch or tag to deploy. Merge the pull request into main first, or enter its branch name.
+    Default: claude/exciting-faraday-lphld3
+    Description: >-
+      Branch or tag to deploy. The reviewed code is on this branch; once it has been merged into main,
+      enter main instead. (main alone is NOT enough until then: it still has the original code.)
   ImageId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
