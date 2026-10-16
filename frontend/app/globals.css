@@ -1,14 +1,23 @@
+/* Tailwind's three layers: base resets, component classes, and the utility classes used in the pages. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Colour variables used across the site (tailwind.config.ts maps names like "ink" to these). */
 :root {
+  /* Page background (light, warm off-white). */
   --paper: #FAFAF7;
+  /* Card and input background. */
   --surface: #FFFFFF;
+  /* Thin divider lines and borders. */
   --line: #E2E0D8;
+  /* Main text colour. */
   --ink: #1A1A18;
+  /* Secondary text colour. */
   --warm: #6B6860;
+  /* Faint text colour (labels, placeholders). */
   --muted: #9E9B94;
+  /* One accent colour per analyst. */
   --agent-left: #C0392B;
   --agent-right: #1A3A5C;
   --agent-econ: #B8860B;
@@ -16,6 +25,7 @@
   --agent-devil: #4A3060;
 }
 
+/* If the visitor's device is set to dark mode, override the colours that need to change. */
 @media (prefers-color-scheme: dark) {
   :root {
     --paper: #121210;
@@ -25,31 +35,39 @@
   }
 }
 
+/* Make width/height include padding and borders, which makes sizes easier to reason about. */
 * {
   box-sizing: border-box;
 }
 
+/* Remove the browser's default margin around the page. */
 body {
   margin: 0;
 }
 
+/* Only animate for visitors who have not asked their device to reduce motion. */
 @media (prefers-reduced-motion: no-preference) {
+  /* The pulsing dot for an analyst who is writing. */
   .dot-pulse {
     animation: dot-pulse 1s ease-in-out infinite;
   }
+  /* New content fades in over 0.3 seconds. */
   .fade-in {
     animation: fade-in 300ms ease;
   }
+  /* The tab underline grows and shrinks smoothly. */
   .tab-underline {
     transition: width 150ms ease;
   }
 }
 
+/* Pulse: fully visible at the start and end, dimmed in the middle. */
 @keyframes dot-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
 
+/* Fade in: from invisible to fully visible. */
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
