@@ -1,8 +1,15 @@
+# Files not sent to Docker when building the frontend image.
+# Installed packages (the Dockerfile installs its own fresh copy).
 node_modules
+# Local build output.
 .next
+# Environment files, which may hold secrets.
 .env*
+# The build instructions themselves are not needed inside the image.
 Dockerfile
 .dockerignore
+# Markdown documentation.
 *.md
+# Test files and test config.
 lib/*.test.ts
 vitest.config.ts

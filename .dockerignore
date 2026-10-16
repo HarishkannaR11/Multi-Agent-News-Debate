@@ -1,21 +1,32 @@
 # Backend image build context (repo root)
+# Files and folders listed here are NOT sent to Docker when building: smaller, faster, and no secrets inside the image.
+# Git history and CI/editor folders.
 .git
 .github
 .claude
+# The frontend has its own Dockerfile and context, so it is not needed here.
 frontend
+# Documentation.
 docs
+# Python cache files.
 **/__pycache__
 **/*.pyc
+# Local virtual environments.
 .venv
 venv
+# Tool caches.
 .pytest_cache
 .ruff_cache
 .mypy_cache
+# Secret settings files must never enter an image (the "!" line below makes an exception for the safe example file).
 .env
 .env.*
 !.env.example
+# Tests and project config are not needed at runtime.
 backend/tests
 pytest.ini
 pyproject.toml
+# All Markdown files.
 *.md
+# Compose files.
 docker-compose*.yml

@@ -4,15 +4,22 @@
 #
 # Run from this directory. Needs a .env next to it (deploy/aws/bootstrap.sh writes it from Secrets
 # Manager; for a local trial: GROQ_API_KEY=... NEWSAPI_KEY=... ADMIN_TOKEN=... in .env).
+# The project name: prefixes container, network and volume names (e.g. "counterpoint-redis-1").
 name: counterpoint
 
+# "services" lists the containers that make up the application.
 services:
+  # The database container.
   redis:
     image: redis:7-alpine
     # Cap memory so Redis can never starve the backend; expiring keys (debates, opinions) go first.
+    # Flags: persist to disk (appendonly), limit memory to 256 MB, and when full evict the least recently used key
+    # among those that have an expiry (volatile-lru).
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
+    # Keep Redis's data in a named volume that survives container recreation.
     volumes:
       - redis-data:/data
+    # Check health with "redis-cli ping" every 5 seconds.
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -20,40 +27,54 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # The FastAPI backend container.
   backend:
+    # The image name to use or create; BACKEND_IMAGE overrides it (CI sets a pre-built image), else a local name.
     image: ${BACKEND_IMAGE:-counterpoint-backend:local}
+    # How to build it if it does not exist: context "../.." is the repository root.
     build:
       context: ../..
       dockerfile: backend/Dockerfile
+    # Load the app's settings (written from Secrets Manager) from the .env next to this file.
     env_file: .env
     environment:
+      # Redis is reachable by its service name "redis" on the compose network.
       REDIS_URL: redis://redis:6379
       SCHEDULER_ENABLED: "true"        # the server never sleeps, so the built-in daily job is enough
       # Client -> CloudFront -> Caddy -> backend: the real client is two hops from the right of
       # X-Forwarded-For (Caddy appends CloudFront's address; CloudFront appended the client's).
+      # Trust the X-Forwarded-For header for the client's address, and count 2 hops from the right.
       TRUST_PROXY_HEADERS: "true"
       TRUSTED_PROXY_HOPS: "2"
+    # Wait until Redis is healthy before starting.
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
 
+  # The Next.js frontend container.
   frontend:
+    # Image name (overridable with FRONTEND_IMAGE), as for the backend.
     image: ${FRONTEND_IMAGE:-counterpoint-frontend:local}
     build:
       context: ../../frontend           # NEXT_PUBLIC_* left empty on purpose: same-origin
     restart: unless-stopped
 
+  # The router: the only container that publishes a port to the outside.
   caddy:
     image: caddy:2-alpine
+    # Publish port 80 (host:container). The security group only allows inbound traffic on this port.
     ports:
       - "80:80"
+    # Mount our Caddyfile read-only (":ro") into the place where Caddy looks for it.
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    # Start after the two services it forwards to.
     depends_on:
       - backend
       - frontend
     restart: unless-stopped
 
+# Declare the named volume used by Redis above.
 volumes:
   redis-data:

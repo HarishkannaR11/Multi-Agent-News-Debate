@@ -1,4 +1,5 @@
 {
+	# Global options block (applies to the whole server).
 	# TLS is terminated by CloudFront; this listens on plain HTTP only.
 	auto_https off
 	servers {
@@ -6,15 +7,21 @@
 		# rate-limit real clients (TRUSTED_PROXY_HOPS=2 in docker-compose.yml). The server's firewall
 		# only exposes port 80; a direct caller could spoof the header, which the global opinion cap
 		# and the admin token still cover.
+		# Trust every address as a proxy (0.0.0.0/0 = all IPv4, ::/0 = all IPv6), so Caddy appends to the existing header.
 		trusted_proxies static 0.0.0.0/0 ::/0
 	}
 }
 
+# One site: listen on port 80 for any host name.
 :80 {
+	# Define a matcher named "backend": requests whose path starts with any of these prefixes.
 	@backend path /api/* /ws/* /internal/* /health /health/*
+	# Requests matching @backend are forwarded to the backend container on port 8000
+	# (reverse_proxy also supports WebSocket upgrades automatically).
 	handle @backend {
 		reverse_proxy backend:8000
 	}
+	# Everything else (pages, scripts, styles) goes to the frontend container on port 3000.
 	handle {
 		reverse_proxy frontend:3000
 	}
