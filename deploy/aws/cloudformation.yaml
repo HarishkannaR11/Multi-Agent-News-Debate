@@ -1,0 +1,307 @@
+# CloudFormation template: one file that describes every AWS resource to create.
+# The version of the template format (this exact string is the only valid value).
+AWSTemplateFormatVersion: "2010-09-09"
+# A text shown in the console. ">-" means "fold the following lines into one line and drop the final newline".
+Description: >-
+  Counterpoint on one EC2 server (Redis + backend + frontend behind Caddy) with HTTPS from CloudFront.
+  Create it from the CloudFormation console; see docs/DEPLOY_AWS.md.
+
+# Parameters are the form fields the person fills in when creating the stack.
+Parameters:
+  # The key for the AI service.
+  GroqApiKey:
+    Type: String
+    # NoEcho hides the value in the console and in stack descriptions (it is a secret).
+    NoEcho: true
+    # The value must match this pattern: at least 10 letters, digits, "-" or "_".
+    AllowedPattern: "^[A-Za-z0-9_-]{10,}$"
+    # The message shown when the pattern is not matched.
+    ConstraintDescription: "Paste the Groq API key (letters, digits, - and _ only)."
+    Description: Groq API key (console.groq.com).
+  # Optional news API keys: an empty value is allowed (the pattern uses "*" = zero or more characters).
+  NewsApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    AllowedPattern: "^[A-Za-z0-9_-]*$"
+    Description: NewsAPI key. Provide this or the GNews key (or both).
+  GNewsApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    AllowedPattern: "^[A-Za-z0-9_-]*$"
+    Description: GNews key. Provide this or the NewsAPI key (or both).
+  # The password for the "generate debate" endpoint; at least 24 characters so it is hard to guess.
+  AdminToken:
+    Type: String
+    NoEcho: true
+    AllowedPattern: "^[A-Za-z0-9_-]{24,}$"
+    ConstraintDescription: "At least 24 characters: letters, digits, - and _ only."
+    Description: A long random string that protects the "generate debate" endpoint.
+  # Where cost warnings are emailed; the pattern requires something@something.something.
+  AlertEmail:
+    Type: String
+    AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    Description: Email that receives a warning when spending approaches the monthly budget.
+  # The monthly spending limit used by the budget alert (at least 5 dollars).
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 40
+    MinValue: 5
+    Description: Monthly spend (USD) that triggers the warning emails.
+  # The size of the server; only these four choices are allowed.
+  InstanceType:
+    Type: String
+    Default: c7i-flex.large
+    AllowedValues: [c7i-flex.large, m7i-flex.large, t3.medium, t3.large]
+    Description: >-
+      Needs 4 GB of RAM or more. On an AWS "Free plan" account pick one the EC2 console marks
+      "Free tier eligible" in your region (c7i-flex.large or m7i-flex.large); t3.* works on a Paid plan.
+  # The Git repository the server downloads the code from.
+  RepoUrl:
+    Type: String
+    Default: https://github.com/HarishkannaR11/Multi-Agent-News-Debate.git
+    Description: Public Git repository to deploy.
+  # Which branch or tag of that repository to deploy.
+  GitRef:
+    Type: String
+    Default: claude/exciting-faraday-lphld3
+    Description: >-
+      Branch or tag to deploy. The reviewed code is on this branch; once it has been merged into main,
+      enter main instead. (main alone is NOT enough until then: it still has the original code.)
+  # The operating-system image. This special type makes AWS look up the value in the Systems Manager
+  # Parameter Store, so the newest Ubuntu 24.04 image id for your region is found automatically.
+  ImageId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+    Description: Ubuntu 24.04 LTS (looked up automatically for the region you create the stack in).
+
+# Conditions are true/false switches used further down.
+Conditions:
+  # True when the stack is created in the us-east-1 region (its server host names are formatted differently).
+  IsUsEast1: !Equals [!Ref "AWS::Region", us-east-1]
+
+# Resources are the things that get created.
+Resources:
+  # --- secrets: kept out of the instance's user data; the server reads them at boot -------------
+  # A secret in AWS Secrets Manager holding the app's keys as JSON.
+  AppSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Counterpoint API keys and admin token
+      # !Sub fills in the ${...} placeholders with the parameter values; "|-" keeps the text as written.
+      SecretString: !Sub |-
+        {"GROQ_API_KEY": "${GroqApiKey}", "NEWSAPI_KEY": "${NewsApiKey}", "GNEWS_API_KEY": "${GNewsApiKey}", "ADMIN_TOKEN": "${AdminToken}"}
+
+  # --- access: no SSH. Use Session Manager (EC2 console -> Connect -> Session Manager) ------------
+  # An IAM role: the identity the server uses when it talks to AWS (so no access keys are stored on it).
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      # Who may use this role: the EC2 service (that is, our server).
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      # An AWS-made permission set that lets Session Manager (browser terminal, no SSH) work.
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      # Our own extra permission, defined inline.
+      Policies:
+        - PolicyName: ReadAppSecret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Allow reading exactly one thing - the secret above - and nothing else.
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref AppSecret
+
+  # The wrapper that lets an EC2 server use the role.
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref InstanceRole]
+
+  # --- network: only HTTP in (CloudFront talks to the origin over HTTP) -------------------------
+  # A security group is a firewall for the server.
+  ServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Counterpoint server - HTTP only, no SSH
+      # Inbound rules. Only one: TCP port 80 from anywhere. Nothing else (no SSH) can reach the server.
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP (from CloudFront)
+
+  # The server itself.
+  Server:
+    Type: AWS::EC2::Instance
+    Properties:
+      # The Ubuntu image, size and role chosen above.
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      # Attach the firewall.
+      SecurityGroupIds: [!GetAtt ServerSecurityGroup.GroupId]
+      # The disk: 30 GB of fast (gp3) storage that is deleted together with the server.
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 30
+            VolumeType: gp3
+            DeleteOnTermination: true
+      # Require the safer token-based version of the instance metadata service (IMDSv2).
+      MetadataOptions:
+        HttpTokens: required
+      # A label shown in the console.
+      Tags:
+        - { Key: Name, Value: counterpoint }
+      # A script that runs once, when the server boots for the first time.
+      UserData:
+        # The script must be base64-encoded; !Sub fills in the ${...} placeholders inside it.
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Stop at the first error and print each command (-x) so the log shows what happened.
+          set -euxo pipefail
+          # Copy all output into a log file as well as the console.
+          exec > >(tee -a /var/log/counterpoint-bootstrap.log) 2>&1
+          # Never ask questions during installs.
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -y
+          apt-get install -y git
+          # Saved so `update.sh` can be re-run later without remembering them.
+          # (Write the secret's name and the region to /etc/counterpoint.env as export lines.)
+          printf 'export SECRET_ID=%s\nexport AWS_REGION=%s\n' '${AppSecret}' '${AWS::Region}' > /etc/counterpoint.env
+          # Create the install folder.
+          mkdir -p /opt/counterpoint
+          # Download only the latest commit of the chosen branch.
+          git clone --depth 1 --branch '${GitRef}' '${RepoUrl}' /opt/counterpoint/app
+          # Load the two variables just saved.
+          . /etc/counterpoint.env
+          # Run the bootstrap script, which installs Docker, writes the settings and starts everything.
+          /opt/counterpoint/app/deploy/aws/bootstrap.sh
+
+  # A fixed address, so stopping and starting the server (to save credits) doesn't break CloudFront.
+  # An Elastic IP: a public address that stays the same even if the server is stopped and started.
+  ServerIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - { Key: Name, Value: counterpoint }
+
+  # Attach that address to the server.
+  ServerIpAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt ServerIp.AllocationId
+      InstanceId: !Ref Server
+
+  # --- HTTPS in front: CloudFront default domain, WebSockets work, nothing cached for the app ----
+  # CloudFront: AWS's content delivery network. It gives the site an https:// address.
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    # Create it only after the fixed address is attached (the origin name is built from that address).
+    DependsOn: ServerIpAssociation
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Counterpoint
+        # Use only the cheapest set of edge locations (North America and Europe).
+        PriceClass: PriceClass_100
+        HttpVersion: http2
+        # The "origin" is where CloudFront fetches content from: our server.
+        Origins:
+          - Id: server
+            # The EIP's public DNS name: ec2-<a>-<b>-<c>-<d>.compute-1.amazonaws.com (us-east-1)
+            # or ec2-<a>-<b>-<c>-<d>.<region>.compute.amazonaws.com (every other region).
+            # Build the name from three pieces joined with no separator: "ec2-", the IP with dots turned into dashes,
+            # and an ending that depends on the region.
+            DomainName: !Join
+              - ""
+              - - ec2-
+                - !Join ["-", !Split [".", !Ref ServerIp]]
+                - !If [IsUsEast1, ".compute-1.amazonaws.com", !Sub ".${AWS::Region}.compute.amazonaws.com"]
+            # CloudFront connects to our server over plain HTTP on port 80, waiting up to 60 seconds for answers.
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+              HTTPPort: 80
+              OriginReadTimeout: 60
+              OriginKeepaliveTimeout: 60
+        # The default rule for every request.
+        DefaultCacheBehavior:
+          TargetOriginId: server
+          # Visitors using http:// are redirected to https://.
+          ViewerProtocolPolicy: redirect-to-https
+          # Allow all HTTP methods (the API needs POST).
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+          Compress: true
+          # These ids are AWS-managed policies: no caching, and forward all headers (including X-Forwarded-For) to the server.
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad          # Managed-CachingDisabled
+          OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3  # Managed-AllViewer
+        # A special rule for some paths.
+        CacheBehaviors:
+          - PathPattern: /_next/static/*   # content-hashed build assets: safe to cache
+            TargetOriginId: server
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6        # Managed-CachingOptimized
+
+  # --- cost guard-rail --------------------------------------------------------------------------
+  # A budget that emails a warning when spending gets close to the limit.
+  Budget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        # Name it after the stack.
+        BudgetName: !Sub "${AWS::StackName}-monthly"
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        # The limit, in US dollars.
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUsd
+          Unit: USD
+      # Two alerts, both emailed to the address given:
+      NotificationsWithSubscribers:
+        # 1) when the actual spending passes 80% of the limit
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - { SubscriptionType: EMAIL, Address: !Ref AlertEmail }
+        # 2) when the forecast says the month will end above 100% of the limit
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - { SubscriptionType: EMAIL, Address: !Ref AlertEmail }
+
+# Outputs are values shown on the stack's "Outputs" tab after creation.
+Outputs:
+  # The website address (CloudFront's default https domain).
+  SiteUrl:
+    Description: Your site. Give the server 10-15 minutes after the stack finishes creating.
+    Value: !Sub "https://${Distribution.DomainName}"
+  # A link to check that the backend is up.
+  HealthCheck:
+    Description: Shows {"status":"ready"} once the backend is up.
+    Value: !Sub "https://${Distribution.DomainName}/health/ready"
+  # The server's id, for finding it in the EC2 console.
+  InstanceId:
+    Description: Open this instance in the EC2 console and use Connect -> Session Manager to run commands.
+    Value: !Ref Server
+  # A command to copy into Session Manager to watch the first-boot progress.
+  BootstrapLog:
+    Description: Command to follow the first-boot progress (run in Session Manager).
+    Value: sudo tail -f /var/log/counterpoint-bootstrap.log

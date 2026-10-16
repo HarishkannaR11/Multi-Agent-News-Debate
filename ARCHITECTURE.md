@@ -105,7 +105,6 @@ backend/
     ws.py                     WS /ws/debate/{id}
   services/
     redis_service.py          key construction, (de)serialization, TTLs
-    langsmith_service.py      optional trace context manager
 ```
 
 Imports are relative within the `backend.` package, which is why the server
@@ -528,15 +527,15 @@ wrapped in `@media (prefers-reduced-motion: no-preference)`.
 
 ## 11. Observability
 
-LangGraph nodes are auto-instrumented by LangChain's tracing when
-`LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` is set, giving per-node
-latency, token cost, prompt, and completion in LangSmith under
-`LANGCHAIN_PROJECT`.
+LangGraph is auto-instrumented by LangChain's tracing when
+`LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` is set, giving a trace per
+run with per-node latency and input/output state under `LANGCHAIN_PROJECT`.
+Runs are named `daily_debate` and tagged with the date (see `run_config` in
+`graph/graph.py`).
 
-`services/langsmith_service.py` adds an optional `trace_run(name, tags)`
-context manager for tagging a whole run (for example by date and topic slug).
-It degrades to a no-op generator when the SDK is missing or the key is unset,
-so tracing is never a hard dependency.
+The LLM is called through the raw Groq client, which LangSmith does not wrap, so
+individual prompts, completions and token counts are **not** captured; only the
+node-level spans are. Wrapping `llm.invoke` with `langsmith.traceable` would add them.
 
 Worth watching per run: cost per persona, latency per node (the five parallel
 openings should overlap, not serialize), guardrail pass/fail counts, and the
@@ -611,28 +610,25 @@ container's lifecycle — see limitations.
 
 ## 15. Known limitations
 
-Honest list of what this design doesn't do yet:
+What the design still doesn't do:
 
-1. **Live runs aren't persisted.** `ws.py` streams the graph but never calls
-   `save_debate`, so only the scheduled 07:00 run reaches the archive. A
-   completed-run write in the WS handler would fix it.
-2. **Every WebSocket connection starts a full debate** — 13 LLM calls. There's
-   no check for an existing debate for that date, and `debate_id` from the
-   route is ignored. Two browser tabs mean two full runs.
-3. **Opinion history is write-only.** `get_opinions` exists in the service
-   layer but no route exposes it, so past threads are stored and then
-   unreadable.
-4. **`list_debates` is `SCAN` + N round trips.** Fine for a 30-day window;
-   a sorted set index would be the fix if the archive grows.
-5. **The scheduler doesn't survive horizontal scaling.** Every replica would
-   fire its own 07:00 job. This needs a distributed lock or an external
-   trigger hitting a protected endpoint.
-6. **Guardrail models load at import**, adding ~30s to boot and a few hundred
-   MB of RSS — awkward on small instances and for cold-start platforms.
-7. **`user_id` is client-supplied** (the UI sends `"guest"`). There's no auth,
-   so opinion threads aren't really per-user.
-8. **One topic per day.** `TopicTabs` is built for multiple, but the pipeline
-   fetches a single top headline.
-9. **Round 1 is blind.** Parallel fan-out means the devil's advocate can't read
-   the arguments it's meant to critique until the rebuttal round; serializing
-   it after the other four would cost latency but sharpen it.
+1. **`user_id` is client-supplied.** The UI shows a user's earlier opinions on a
+   debate, keyed by a random per-browser id, but there is no authentication: anyone
+   can send any id, so threads are a convenience, not private.
+2. **Output guardrail failures degrade, not fail.** A persona whose opening never
+   passes sits the debate out, failing rebuttals are dropped, and a blocked verdict is
+   replaced by fixed fallback text. Only a debate with zero passing openings is an error.
+3. **News context is short.** NewsAPI/GNews return ~200 characters of `content`;
+   the pipeline doesn't fetch full article text.
+4. **One topic per day.** `TopicTabs` is built for multiple, but the pipeline
+   fetches a single headline.
+5. **Guardrail models are heavy.** They pull torch, transformers and a spaCy
+   model, load lazily on first use (not at import), and need a couple of GB of RAM.
+6. **Replay isn't live streaming.** The WebSocket sends three stage events from
+   the stored debate rather than per-node deltas.
+
+Resolved since the first version: parallel-write crash in the graph, unbounded
+rebuttal retry loop, live runs never persisted / every page load spending 13 LLM
+calls, deprecated Groq models, `SCAN`-based archive listing (now a sorted-set
+index), scheduler duplication across replicas (Redis lock + admin endpoint), and
+the blind devil's advocate (now runs after the other four).

@@ -1,0 +1,9 @@
+# Dev conveniences, applied automatically by `docker compose up`.
+# Settings here are merged on top of docker-compose.yml.
+services:
+  backend:
+    # Replace the start command with one that has "--reload": the server restarts when code changes.
+    command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    # Mount your local backend folder over the one in the container, so edits show up immediately.
+    volumes:
+      - ./backend:/app/backend

@@ -1,0 +1,63 @@
+# The name shown in the GitHub "Actions" tab.
+name: Deploy backend (Hugging Face Space)
+
+# Pushes the backend to a free Hugging Face Docker Space, which builds and runs the image.
+# One-time setup is in docs/DEPLOY_FREE.md. Needs repository secrets:
+#   HF_TOKEN  a Hugging Face access token with write access
+#   HF_SPACE  the Space id, e.g. your-username/counterpoint-api
+
+# When this workflow runs:
+on:
+  # When code is pushed to main AND at least one changed file is in one of these paths.
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "deploy/huggingface/**"
+      - ".github/workflows/deploy-backend.yml"
+  # Or by hand from the Actions tab.
+  workflow_dispatch:
+
+# Never run two deployments at once, and never cancel one that is already in progress.
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+# The workflow may only read the repository contents.
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # The two secrets are exposed as environment variables (their values are hidden in logs).
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_SPACE: ${{ secrets.HF_SPACE }}
+    steps:
+      # Download the repository.
+      - uses: actions/checkout@v4
+      # If a secret is missing, print a friendly note instead of failing.
+      - name: Not configured
+        if: env.HF_TOKEN == '' || env.HF_SPACE == ''
+        run: echo "::notice::Set the HF_TOKEN and HF_SPACE repository secrets to enable deployment."
+      # Create the Space folder (backend code + adapted Dockerfile + README) in the runner's temp folder.
+      - name: Build the Space bundle
+        if: env.HF_TOKEN != '' && env.HF_SPACE != ''
+        run: deploy/huggingface/build_bundle.sh "$RUNNER_TEMP/space"
+      # Turn that folder into a git repository and push it to Hugging Face.
+      - name: Push to the Space
+        if: env.HF_TOKEN != '' && env.HF_SPACE != ''
+        working-directory: ${{ runner.temp }}/space
+        run: |
+          # Create a new repository whose branch is called main (-q = quiet).
+          git init -q -b main
+          # Set the author shown on the commit.
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          # Stage every file and commit, naming the source commit in the message.
+          git add -A
+          git commit -q -m "Deploy ${GITHUB_SHA}"
+          # The Space repo is generated, so its history is replaced on every deploy.
+          # The URL carries the username (the part of HF_SPACE before the "/") and the token as the password.
+          git push --force "https://${HF_SPACE%%/*}:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" main

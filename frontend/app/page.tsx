@@ -1,19 +1,18 @@
+// The component that streams and displays a debate.
 import { DebateStream } from "@/components/DebateStream";
+// The site header.
 import { Header } from "@/components/Header";
 
+// The home page (address "/"): shows the most recent debate.
 export default function HomePage() {
-  const today = new Date().toISOString().slice(0, 10);
-  const displayDate = new Date().toLocaleDateString("en-US", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-
   return (
+    // The page's main content area with space at the bottom.
     <main className="pb-16">
-      <Header date={displayDate} topicCount={1} />
+      {/* Title and navigation. */}
+      <Header />
       <div className="mt-8">
-        <DebateStream debateId={today} />
+        {/* "latest" tells the server to pick the newest stored debate. */}
+        <DebateStream debateId="latest" />
       </div>
     </main>
   );

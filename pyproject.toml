@@ -1,0 +1,35 @@
+# Settings for ruff, the Python linter (a fast style and bug checker).
+[tool.ruff]
+# Lines may be at most 120 characters.
+line-length = 120
+# Check against Python 3.11 rules.
+target-version = "py311"
+# Do not lint the frontend folder.
+extend-exclude = ["frontend"]
+
+[tool.ruff.lint]
+# Which rule families are on: E/W = pycodestyle, F = pyflakes (unused names), I = import sorting,
+# B = bugbear (likely bugs), UP = modernise syntax, ASYNC = async mistakes, S110 = bare try/except/pass.
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S110"]
+ignore = ["B008"]  # FastAPI's Depends()/Query() defaults
+
+[tool.ruff.lint.isort]
+# Treat "backend" as our own package when sorting imports.
+known-first-party = ["backend"]
+
+# Settings for mypy, the static type checker.
+[tool.mypy]
+python_version = "3.11"
+# Which folder to check.
+files = ["backend"]
+# Do not complain about libraries that ship no type information.
+ignore_missing_imports = true
+# Complain about "type: ignore" comments that are no longer needed.
+warn_unused_ignores = true
+# Also check the inside of functions that have no type annotations.
+check_untyped_defs = true
+# Find modules by their folder path (needed because "backend" is a package).
+explicit_package_bases = true
+mypy_path = "."
+# Skip the tests.
+exclude = ["backend/tests/"]

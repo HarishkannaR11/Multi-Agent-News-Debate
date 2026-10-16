@@ -1,0 +1,6 @@
+# CPU-only torch for the guardrails toxicity model (detoxify/transformers).
+# Installed separately from requirements.txt so the image doesn't pull ~3 GB of CUDA libraries.
+# Bounded rather than pinned: pin an exact version here once a build succeeds.
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+torch>=2.5,<3

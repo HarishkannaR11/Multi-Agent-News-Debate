@@ -1,24 +1,64 @@
-version: "3.9"
-
+# Production-like stack. `docker compose up --build` also picks up docker-compose.override.yml
+# (dev: bind-mounted code + reload). Use `docker compose -f docker-compose.yml up` to skip it.
+# Requires a .env file: cp .env.example .env and fill in the keys.
+# "services" lists the containers that make up the application.
 services:
+  # The database container.
   redis:
+    # Use the official small Redis 7 image.
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Start Redis with "append-only" persistence, so data is written to disk and survives a restart.
+    command: ["redis-server", "--appendonly", "yes"]
+    # Keep Redis's data folder (/data) in a named volume that outlives the container.
     volumes:
       - redis-data:/data
+    # How Docker checks that Redis is working: run "redis-cli ping" every 5s, allow 3s each, up to 10 failures.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Restart it automatically unless it was stopped on purpose.
+    restart: unless-stopped
 
+  # The FastAPI backend container.
   backend:
+    # Build the image from the backend Dockerfile; the build context is the repo root (".").
     build:
       context: .
       dockerfile: backend/Dockerfile
+    # Load the settings (API keys etc.) from the .env file into the container.
     env_file: .env
+    environment:
+      # .env points at localhost for running outside Docker; inside compose Redis is a sibling service.
+      REDIS_URL: redis://redis:6379
+    # Publish container port 8000 on the host's port 8000 (host:container).
     ports:
       - "8000:8000"
+    # Start only after Redis reports healthy.
     depends_on:
-      - redis
-    volumes:
-      - ./backend:/app/backend
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
+  # The Next.js frontend container.
+  frontend:
+    # Build from the frontend folder, passing two build-time settings.
+    build:
+      context: ./frontend
+      args:
+        # The browser (not the container) calls the API, so this is the host-published port.
+        # "${NAME:-default}" means: use the NAME environment variable, or the default after ":-" if unset.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
+    # Publish the website on host port 3000.
+    ports:
+      - "3000:3000"
+    # Start after the backend container has started.
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+# Declare the named volume used by Redis above.
 volumes:
   redis-data:
