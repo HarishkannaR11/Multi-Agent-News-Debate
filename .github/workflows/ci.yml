@@ -105,20 +105,15 @@ jobs:
 
       # Scan both images for known vulnerabilities in operating-system packages and libraries.
       # Only CRITICAL problems that already have a fix available fail the build (high noise otherwise).
-      - name: Scan the backend image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: counterpoint-backend:ci
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
-      - name: Scan the frontend image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: counterpoint-frontend:ci
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
+      # Trivy runs from its official image (pinned version) and reads the images from the local Docker.
+      - name: Scan the images for vulnerabilities (Trivy)
+        run: |
+          for image in counterpoint-backend:ci counterpoint-frontend:ci; do
+            echo "::group::trivy $image"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.71.2 \
+              image --severity CRITICAL --ignore-unfixed --exit-code 1 "$image"
+            echo "::endgroup::"
+          done
 
       - name: Guardrail models load offline as the runtime user
         # --network none proves the models were baked in at build time and that the unprivileged
