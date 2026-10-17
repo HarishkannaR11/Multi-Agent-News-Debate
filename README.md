@@ -114,7 +114,7 @@ and known limitations.
 | Backend | FastAPI + WebSockets |
 | Scheduler | APScheduler (daily 7 AM fetch) |
 | Observability | LangSmith (per-node cost, latency, traces) |
-| Frontend | Next.js 14 + Tailwind |
+| Frontend | Next.js 15 + Tailwind |
 
 ## Prerequisites
 

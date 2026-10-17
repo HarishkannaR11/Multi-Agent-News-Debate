@@ -45,7 +45,7 @@ graph, an APScheduler instance, and a Redis client. Nothing else is stateful.
 ```mermaid
 flowchart LR
     subgraph Client["Browser"]
-        UI["Next.js 14 (App Router)"]
+        UI["Next.js 15 (App Router)"]
     end
 
     subgraph Backend["FastAPI · uvicorn"]

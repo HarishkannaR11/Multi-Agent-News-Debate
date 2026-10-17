@@ -57,7 +57,7 @@ questions interviewers tend to ask.
 | Storage | **Redis** (`redis.asyncio`) | One store for debates (hash), an index (sorted set), locks, rate limits, opinions (list). TTLs expire old data for free |
 | Scheduling | **APScheduler** (+ a protected HTTP trigger) | In-process cron for the daily job; HTTP endpoint for external cron / manual runs |
 | News | NewsAPI with GNews fallback (`httpx`) | Two sources so one outage or quota limit doesn't stop the day |
-| Frontend | **Next.js 14** (App Router), React 18, **TypeScript**, Tailwind | SSR-capable, typed API client, utility CSS with a small design system |
+| Frontend | **Next.js 15** (App Router), React 18, **TypeScript**, Tailwind | SSR-capable, typed API client, utility CSS with a small design system |
 | Realtime | **WebSocket** | The debate "arrives" stage by stage; the client reconnects with backoff |
 | Tests | pytest, pytest-asyncio, fakeredis; vitest | No network or API keys needed: a stubbed LLM and an in-memory Redis |
 | Quality | ruff, mypy, ESLint, `tsc` | Enforced in CI |

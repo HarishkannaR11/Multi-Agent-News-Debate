@@ -304,7 +304,7 @@ guards once so every model is baked into the image. The runtime container then n
 
 ## 8. Frontend (`frontend/`)
 
-**Stack:** Next.js 14 App Router, React 18, TypeScript, Tailwind.
+**Stack:** Next.js 15 App Router, React 18, TypeScript, Tailwind.
 
 ### Pages (`app/`)
 | File | Role |
