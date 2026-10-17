@@ -93,10 +93,25 @@ with os.fdopen(fd, "w") as handle:
 PY
 }
 
+# Installs a cron entry that runs healthcheck.sh every 5 minutes (it feeds the CloudWatch alarm).
+install_healthcheck() {
+  # /etc/counterpoint.env (written by CloudFormation) holds AWS_REGION; the cron line loads it first.
+  # Without that file (a manual run outside CloudFormation) there is no alarm to feed, so skip quietly.
+  if [ -f /etc/counterpoint.env ]; then
+    log "installing the 5-minute health check"
+    # One cron line: every 5 minutes, as root, load the region and run the script, appending output to a log file.
+    echo "*/5 * * * * root . /etc/counterpoint.env && $COMPOSE_DIR/healthcheck.sh >> /var/log/counterpoint-health.log 2>&1" \
+      > /etc/cron.d/counterpoint-health
+    # cron ignores files that are writable by others.
+    chmod 644 /etc/cron.d/counterpoint-health
+  fi
+}
+
 # The main sequence: install tools, add swap, then write the settings file.
 install_packages
 add_swap
 write_env
+install_healthcheck
 
 log "building and starting the stack (the first build takes 10-15 minutes)"
 # Go to the folder with docker-compose.yml (the script stops if this fails).

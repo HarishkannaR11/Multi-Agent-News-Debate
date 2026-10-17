@@ -48,7 +48,10 @@ flowchart TD
     B --> D[devil's advocate]
     L & R & E & G & D --> RB["rebuttal<br/>+ output guardrail"]
     RB -->|guardrail fails · max 2 retries| RB
-    RB -->|pass| M["moderator<br/>verdict + bias scores"]
+    RB -->|pass| V["review<br/>moderator decides"]
+    V -->|no| M["moderator<br/>verdict + bias scores"]
+    V -->|"yes (at most once)"| X["crossfire<br/>closing statements"]
+    X --> M
 ```
 
 **fetch** pulls the top headline from NewsAPI, falling back to GNews if that
@@ -64,12 +67,18 @@ points.
 The devil's advocate runs after the other four so it can read the arguments it
 is meant to attack.
 
-The rebuttal node is the only **conditional edge** in the graph. It validates
+The graph has two **conditional edges**. The first is in the rebuttal node, which validates
 each rebuttal through the output guardrail; on failure it regenerates only the
 failing ones, capped at two retries (`MAX_REBUTTAL_RETRIES`). Rebuttals that
 still fail are **dropped, never published**, and the debate continues with what
 passed. The graph also runs with a hard `recursion_limit`, so a stuck loop fails
-fast instead of burning LLM calls. The **moderator** then writes the verdict and
+fast instead of burning LLM calls.
+
+The second is the **moderator's review**. A fast model reads the debate and answers in strict
+JSON whether an important point was left unresolved. If so, every analyst writes one short closing
+statement answering the moderator's question (the `crossfire` node), and the graph has no edge back,
+so this happens at most once. The step is optional by design: a model error, a blocked question or
+`SECOND_ROUND_ENABLED=false` just skips it. The **moderator** then writes the verdict and
 scores each persona's slant for the bias chart.
 
 Validation sits at the pipeline boundaries rather than around individual LLM
@@ -97,7 +106,7 @@ and known limitations.
 
 | Layer | Technology |
 |---|---|
-| Orchestration | LangGraph (fan-out to 5 agents → rebuttal → verdict) |
+| Orchestration | LangGraph (fan-out to 5 agents → rebuttal → moderator review → optional second round → verdict) |
 | LLM | Groq (`openai/gpt-oss-120b` main, `openai/gpt-oss-20b` fast; set via env) |
 | News | NewsAPI with GNews fallback |
 | Guardrails | Guardrails AI (toxicity + length on input, toxicity + PII on output) |
@@ -175,7 +184,17 @@ ruff check backend && mypy
 cd frontend && npm run typecheck && npm run lint && npm test
 ```
 
-CI (`.github/workflows/ci.yml`) runs all of the above and builds both Docker images.
+CI (`.github/workflows/ci.yml`) runs all of the above, builds both Docker images, scans them with
+Trivy and starts the full stack. Dependabot opens weekly update pull requests.
+
+To check the **prompt quality** with a real key (not part of CI; about 14–20 LLM calls per sample):
+
+```bash
+GROQ_API_KEY=... python -m backend.evals.prompt_eval
+```
+
+It runs three fixed sample articles through the real graph and reports problems such as a missing
+analyst, a refusal, a blocked verdict, identical bias scores or a half-finished second round.
 
 ### Dependencies
 

@@ -22,6 +22,7 @@ export function AgentCard({
   persona,
   argument,
   rebuttal,
+  closing,
 }: {
   // Which analyst this card is for, e.g. "left".
   persona: string;
@@ -29,6 +30,8 @@ export function AgentCard({
   argument?: string;
   // Their rebuttal (undefined until it has arrived).
   rebuttal?: string;
+  // Their closing statement from the optional second round (undefined when there was none).
+  closing?: string;
 }) {
   return (
     // The card box: a border, an 8px coloured left stripe for this analyst, and the surface background.
@@ -52,6 +55,14 @@ export function AgentCard({
             {/* A small "Rebuttal" label, then the rebuttal text. */}
             <p className="font-sans text-xs uppercase tracking-[0.04em] text-muted">Rebuttal</p>
             <p className="mt-1 font-sans text-base leading-[1.75] text-ink">{rebuttal}</p>
+          </div>
+        )}
+        {/* Only render the closing statement if the moderator asked for a second round. */}
+        {closing && (
+          <div className="mt-4 border-l border-dashed border-muted pl-6">
+            {/* A small "Closing statement" label, then the text. */}
+            <p className="font-sans text-xs uppercase tracking-[0.04em] text-muted">Closing statement</p>
+            <p className="mt-1 font-sans text-base leading-[1.75] text-ink">{closing}</p>
           </div>
         )}
       </div>

@@ -201,10 +201,11 @@ one pipeline is two round trips and gives pagination.
 ### `graph/graph.py`: wiring the graph
 - `new_debate_state(seen_urls)`: the initial state.
 - `run_config(date)`: `recursion_limit` (a hard cap on graph steps), plus a run name and tags for tracing.
-- `route_after_rebuttal(state)`: the conditional edge: go to `moderator` if `guardrail_output_pass`,
+- `route_after_rebuttal(state)`: the conditional edge: go to `review` if `guardrail_output_pass`,
   else back to `rebuttal`.
+- `route_after_review(state)`: go to `crossfire` if the moderator asked for another round, else `moderator`.
 - `_build()`: adds nodes; `fetch → extract`; **fan-out** `extract →` four analysts; **fan-in** four
-  analysts `→ devil` (waits for all four); `devil → rebuttal`; conditional edge; `moderator` is the end.
+  analysts `→ devil` (waits for all four); `devil → rebuttal`; conditional edge; `review`; optional `crossfire`; `moderator` is the end.
 - `build_graph()` is `lru_cache`d: compile once, reuse.
 
 ### `graph/prompts.py`: prompt-injection fencing
@@ -242,6 +243,13 @@ one-sentence topic. Returns `{"topic", "status": "debating"}`.
   the other analysts' arguments, then calls `generate_guarded`. If the opening never passes the
   filter, the node returns `{}` and **that analyst sits out** (no rebuttal, no bias score).
 
+**`second_round.py`: `review_node` and `crossfire_node`**: the moderator's optional extra round.
+`parse_review()` accepts only a real JSON `true` plus a non-empty question (anything else means "no").
+`review_node` asks the fast model, runs the question through the output guard, and never fails the
+debate (a model error just skips the round). `crossfire_node` has each analyst answer the question
+in ≤80 words; blocked answers are dropped. There is no edge from `crossfire` back to `review`, so
+the round happens at most once. Switch: `SECOND_ROUND_ENABLED`.
+
 **`rebuttal.py`: `rebuttal_node`**: the most interesting node.
 1. `kept` = rebuttals that already passed (from an earlier loop).
 2. `todo` = analysts that have an opening but no kept rebuttal.
@@ -254,7 +262,7 @@ one-sentence topic. Returns `{"topic", "status": "debating"}`.
 
 **`moderator.py`: `moderator_node`**
 - Refuses to run if **no** analyst argument passed (nothing to moderate).
-- `_transcript` renders openings and rebuttals.
+- `debate_transcript` renders openings, rebuttals and (if present) closing statements.
 - The verdict uses `generate_guarded`; if blocked every time, it publishes `VERDICT_FALLBACK`.
 - Bias scores: **fast model**, parsed by `parse_bias_scores` (regex for the JSON, rejects non-objects,
   keeps only known persona keys, rejects booleans because `True` is an `int` in Python, clamps to
@@ -313,14 +321,13 @@ guards once so every model is baked into the image. The runtime container then n
 | File | Role |
 |---|---|
 | **`DebateStream.tsx`** | The client component that **owns the debate state**. On mount it opens the WebSocket, merges each event into state (arguments, rebuttals, verdict, bias scores, topic, resolved id), tracks connection state, and shows a not-found message if the server says so. Derives each analyst's dot state. Shows `OpinionBox` only once the debate is `done` |
-| `AgentCard.tsx` | One analyst's card: colored stripe, opening, and a nested rebuttal when present |
+| `AgentCard.tsx` | One analyst's card: colored stripe, opening, and nested rebuttal / closing statement when present |
 | `AgentStatusDots.tsx` | Five progress dots (waiting / writing / done) with screen-reader text |
 | `VerdictPanel.tsx` | The moderator's verdict plus `BiasChart` |
 | `BiasChart.tsx` | Horizontal bars; width = score × 100 |
 | `OpinionBox.tsx` | Textarea (max 1000, live counter, Ctrl/Cmd+Enter), loads earlier opinions, submits, shows the thread newest first, and shows server error messages |
 | `OpinionResponse.tsx` | Renders the mode label, reply and follow-up question |
 | `Header.tsx` | Title and nav (Latest / Archive); date and topic count are optional |
-| `TopicTabs.tsx` | Built for multiple topics per day but **not used** (one topic per day today) |
 
 ### `lib/api.ts`: the typed API client (the file to know)
 - Types for `Debate`, `DebateSummary`, `OpinionResponse`, stream events.

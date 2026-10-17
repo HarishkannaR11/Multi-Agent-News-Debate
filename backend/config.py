@@ -70,6 +70,8 @@ class Settings:
     GUARDRAILS_ENABLED = _bool("GUARDRAILS_ENABLED", True)
     # How many times a blocked piece of text is regenerated before being dropped.
     MAX_REBUTTAL_RETRIES = int(os.environ.get("MAX_REBUTTAL_RETRIES", 2))
+    # Let the moderator ask the analysts for one extra round when the debate left a point unresolved.
+    SECOND_ROUND_ENABLED = _bool("SECOND_ROUND_ENABLED", True)
     # Hard cap on graph steps so a stuck loop cannot run forever.
     GRAPH_RECURSION_LIMIT = int(os.environ.get("GRAPH_RECURSION_LIMIT", 25))
 

@@ -103,6 +103,23 @@ jobs:
       - name: Backend runs unprivileged
         run: test "$(docker run --rm counterpoint-backend:ci id -u)" != "0"
 
+      # Scan both images for known vulnerabilities in operating-system packages and libraries.
+      # Only CRITICAL problems that already have a fix available fail the build (high noise otherwise).
+      - name: Scan the backend image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: counterpoint-backend:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Scan the frontend image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: counterpoint-frontend:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
       - name: Guardrail models load offline as the runtime user
         # --network none proves the models were baked in at build time and that the unprivileged
         # user can read them (the first build passed while these would have failed at runtime).

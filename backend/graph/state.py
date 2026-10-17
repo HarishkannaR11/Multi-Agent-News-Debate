@@ -23,6 +23,10 @@ class DebateState(TypedDict, total=False):
     # Each analyst's opening argument. The reducer merges what parallel nodes write.
     arguments: Annotated[dict, merge_dicts]   # { "left": "...", "right": "...", ... }
     rebuttals: dict             # { "left": "...", "right": "...", ... }
+    # The moderator's question for the optional second round, and whether that round should run.
+    focus: str
+    second_round: bool
+    crossfire: dict             # { "left": "closing statement", ... } from the optional second round
     # How many times blocked rebuttals have been regenerated (must be declared here or LangGraph drops it).
     rebuttal_retries: int
     # Did the news article pass the input content filter?

@@ -126,7 +126,10 @@ flowchart TD
     B --> D["devil"]
     L & R & E & G & D --> RB["rebuttal"]
     RB -->|"guardrail_output_pass = false<br/>(≤ 2 retries)"| RB
-    RB -->|"guardrail_output_pass = true"| M["moderator"]
+    RB -->|"guardrail_output_pass = true"| V["review"]
+    V -->|"needs_second_round = false"| M["moderator"]
+    V -->|"needs_second_round = true"| X["crossfire"]
+    X --> M
     M --> FIN([finish])
 ```
 
@@ -140,14 +143,23 @@ the `PERSONAS` dict, so a sixth perspective is a prompt plus two edges.
 resolves by waiting for every inbound branch to finish before running the node
 once. That barrier is what lets each persona see all four opposing arguments.
 
-**Conditional edge.** `rebuttal` is the only branching point:
+**Conditional edges.** `rebuttal` loops back on guardrail failures, and the moderator's
+`review` decides whether the debate gets one extra round:
 
 ```python
-g.add_conditional_edges("rebuttal",
-    lambda s: "moderator" if s["guardrail_output_pass"] else "rebuttal",
-    {"moderator": "moderator", "rebuttal": "rebuttal"}
-)
+g.add_conditional_edges("rebuttal", route_after_rebuttal,
+                        {"review": "review", "rebuttal": "rebuttal"})
+g.add_conditional_edges("review", route_after_review,
+                        {"crossfire": "crossfire", "moderator": "moderator"})
+g.add_edge("crossfire", "moderator")   # no edge back to "review": the extra round happens at most once
 ```
+
+`review` asks the fast model whether the analysts left a specific point unresolved
+(strict JSON: `needs_second_round`, `focus`). If so, every analyst writes one short closing
+statement answering the moderator's `focus` question (`crossfire`), and the moderator reads
+those too. Everything is optional by design: a failed review call, a blocked question or a
+`SECOND_ROUND_ENABLED=false` setting simply skips the round. This is what makes the system more
+than a fixed pipeline: the moderator's output changes the control flow.
 
 The retry ceiling is enforced *inside* the node rather than in the predicate:
 `rebuttal_node` tracks `_rebuttal_retries` on the state and, once it hits
@@ -169,9 +181,11 @@ Node names differ from persona keys in one case: the node is registered as
 | `extract` | `news_context` | `topic`, `status` | 1 | 100 tok |
 | persona ×5 | `topic`, `news_context`, `arguments` | `arguments[key]` | 1 each | 400 tok |
 | `rebuttal` | `topic`, `arguments` | `rebuttals`, `guardrail_output_pass`, `round=2`, `status` | 5 | 350 tok each |
-| `moderator` | `arguments`, `rebuttals`, `topic` | `verdict`, `bias_scores`, `status` | 2 | 500 + 200 tok |
+| `review` | `arguments`, `rebuttals`, `topic` | `second_round`, `focus` | 1 (fast model) | 200 tok |
+| `crossfire` (only if asked for) | `focus`, the transcript | `crossfire` | 5 | 250 tok each |
+| `moderator` | `arguments`, `rebuttals`, `crossfire`, `topic` | `verdict`, `bias_scores`, `status` | 2 | 500 + 200 tok |
 
-A full run is **13 LLM calls**: 1 extract + 5 openings + 5 rebuttals + 2
+A full run is **14 LLM calls** (19 when the moderator asks for the extra round): 1 extract + 5 openings + 5 rebuttals + 1 review + 2
 moderator (verdict and bias scoring are separate calls so the scoring prompt
 can demand strict JSON without constraining the prose verdict).
 
@@ -495,7 +509,6 @@ components/
     OpinionBox.tsx
       OpinionResponse.tsx
   Header.tsx
-  TopicTabs.tsx       built, not currently mounted (one debate/day)
 lib/
   api.ts              typed REST client + WebSocket connector
 ```
@@ -620,8 +633,7 @@ What the design still doesn't do:
    replaced by fixed fallback text. Only a debate with zero passing openings is an error.
 3. **News context is short.** NewsAPI/GNews return ~200 characters of `content`;
    the pipeline doesn't fetch full article text.
-4. **One topic per day.** `TopicTabs` is built for multiple, but the pipeline
-   fetches a single headline.
+4. **One topic per day.** The pipeline fetches a single headline.
 5. **Guardrail models are heavy.** They pull torch, transformers and a spaCy
    model, load lazily on first use (not at import), and need a couple of GB of RAM.
 6. **Replay isn't live streaming.** The WebSocket sends three stage events from

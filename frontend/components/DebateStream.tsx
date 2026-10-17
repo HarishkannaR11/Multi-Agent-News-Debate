@@ -9,6 +9,8 @@ import { connectDebateStream, type ConnectionState, type DebateStreamEvent } fro
 import { AgentCard } from "./AgentCard";
 // The row of progress dots, and the type of one dot's state.
 import { AgentStatusDots, type AgentDotState } from "./AgentStatusDots";
+// The button that copies a link to this debate.
+import { CopyLinkButton } from "./CopyLinkButton";
 // The box where the reader types their own opinion.
 import { OpinionBox } from "./OpinionBox";
 // The panel with the moderator's verdict and the bias chart.
@@ -47,6 +49,9 @@ export function DebateStream({ debateId }: { debateId: string }) {
   const [rebuttals, setRebuttals] = useState<Record<string, string>>({});
   // The moderator's verdict.
   const [verdict, setVerdict] = useState("");
+  // The moderator's second-round question and the analysts' closing statements (empty if there was no extra round).
+  const [focus, setFocus] = useState("");
+  const [crossfire, setCrossfire] = useState<Record<string, string>>({});
   // Bias scores, keyed by analyst.
   const [biasScores, setBiasScores] = useState<Record<string, number>>({});
   // An error message to show instead of the debate (null = no error).
@@ -61,6 +66,8 @@ export function DebateStream({ debateId }: { debateId: string }) {
     setArgs({});
     setRebuttals({});
     setVerdict("");
+    setFocus("");
+    setCrossfire({});
     setBiasScores({});
     setError(null);
 
@@ -81,6 +88,9 @@ export function DebateStream({ debateId }: { debateId: string }) {
         if (event.data) setArgs((prev) => ({ ...prev, ...event.data }));
         if (event.rebuttals) setRebuttals((prev) => ({ ...prev, ...event.rebuttals }));
         if (event.verdict) setVerdict(event.verdict);
+        // The optional second round arrives with the final message.
+        if (event.focus) setFocus(event.focus);
+        if (event.crossfire) setCrossfire((prev) => ({ ...prev, ...event.crossfire }));
         // Ignore empty bias-score objects so earlier messages do not wipe the chart.
         if (event.bias_scores && Object.keys(event.bias_scores).length > 0) {
           setBiasScores(event.bias_scores);
@@ -122,10 +132,13 @@ export function DebateStream({ debateId }: { debateId: string }) {
       {topic && (
         // "fade-in" is a small animation from globals.css.
         <div className="fade-in pb-6">
-          {/* The date label, if known. */}
-          {debateDate && (
-            <p className="font-sans text-xs uppercase tracking-[0.04em] text-muted">Debate of {debateDate}</p>
-          )}
+          {/* The date label (if known) with a share button next to it once the real id is known. */}
+          <div className="flex items-baseline justify-between">
+            {debateDate && (
+              <p className="font-sans text-xs uppercase tracking-[0.04em] text-muted">Debate of {debateDate}</p>
+            )}
+            {resolvedId && <CopyLinkButton debateId={resolvedId} />}
+          </div>
           <h2 className="mt-2 font-serif text-2xl font-semibold leading-snug text-ink">{topic}</h2>
         </div>
       )}
@@ -139,11 +152,23 @@ export function DebateStream({ debateId }: { debateId: string }) {
       >
         {statusMessage(connection, status)}
       </p>
+      {/* The moderator's extra question, shown only for debates that had a second round. */}
+      {focus && (
+        <p className="mt-6 border-l-2 border-ink pl-4 font-serif text-base italic text-warm">
+          The moderator asked for one more round: {focus}
+        </p>
+      )}
       {/* The analyst cards: one column on phones, two columns from the "md" breakpoint up. */}
       <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">
-        {/* One card per analyst, given that analyst's argument and rebuttal (undefined until they arrive). */}
+        {/* One card per analyst, given that analyst's argument, rebuttal and closing statement (undefined until they arrive). */}
         {PERSONAS.map((persona) => (
-          <AgentCard key={persona} persona={persona} argument={args[persona]} rebuttal={rebuttals[persona]} />
+          <AgentCard
+            key={persona}
+            persona={persona}
+            argument={args[persona]}
+            rebuttal={rebuttals[persona]}
+            closing={crossfire[persona]}
+          />
         ))}
       </div>
       {/* The verdict and bias chart (they show placeholders until the data arrives). */}

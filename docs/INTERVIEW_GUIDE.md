@@ -125,6 +125,9 @@ trigger ──▶ acquire lock `lock:daily:{date}` (SET NX EX)  ── already h
    │             failing ones regenerated (max 2 retries), then dropped          (5 calls)
    ├── some failed & retries left ──▶ back to [rebuttal]   (conditional edge)
    ▼
+ [review]     moderator (fast model) decides: is a second round needed?         (1 call)
+   ├── yes ──▶ [crossfire] 5 short closing statements on the moderator's question (5 calls, at most once)
+   ▼
  [moderator]  verdict (guard-checked, fallback text if blocked)                 (1 call)
               bias scores 0–1 per analyst, JSON parsed + validated (retry once) (1 call)
    ▼
@@ -250,7 +253,10 @@ for persona in PARALLEL_PERSONAS:            # fan-out: 4 analysts at once
 g.add_edge(list(PARALLEL_PERSONAS), "devil") # fan-in: devil waits for ALL four
 g.add_edge("devil", "rebuttal")
 g.add_conditional_edges("rebuttal", route_after_rebuttal,
-                        {"moderator": "moderator", "rebuttal": "rebuttal"})
+                        {"review": "review", "rebuttal": "rebuttal"})
+g.add_conditional_edges("review", route_after_review,
+                        {"crossfire": "crossfire", "moderator": "moderator"})  # the moderator steers the flow
+g.add_edge("crossfire", "moderator")        # no edge back to review: the extra round runs at most once
 # run with config={"recursion_limit": 25}   ← a stuck loop fails fast instead of burning LLM calls
 ```
 

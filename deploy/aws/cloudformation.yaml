@@ -57,6 +57,14 @@ Parameters:
     Description: >-
       Needs 4 GB of RAM or more. On an AWS "Free plan" account pick one the EC2 console marks
       "Free tier eligible" in your region (c7i-flex.large or m7i-flex.large); t3.* works on a Paid plan.
+  # Optional firewall in front of CloudFront (costs a few dollars a month, only works in us-east-1).
+  EnableWaf:
+    Type: String
+    Default: "false"
+    AllowedValues: ["false", "true"]
+    Description: >-
+      "true" adds an AWS WAF web ACL (rate limit per IP + AWS's common rules) in front of CloudFront.
+      Needs the stack to be created in us-east-1 and adds roughly 8 USD a month.
   # The Git repository the server downloads the code from.
   RepoUrl:
     Type: String
@@ -80,6 +88,8 @@ Parameters:
 Conditions:
   # True when the stack is created in the us-east-1 region (its server host names are formatted differently).
   IsUsEast1: !Equals [!Ref "AWS::Region", us-east-1]
+  # True only when the person asked for the firewall.
+  UseWaf: !Equals [!Ref EnableWaf, "true"]
 
 # Resources are the things that get created.
 Resources:
@@ -118,6 +128,17 @@ Resources:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref AppSecret
+        # Lets the server's 5-minute health check publish its one metric (and nothing else in CloudWatch).
+        - PolicyName: PublishHealthMetric
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    "cloudwatch:namespace": Counterpoint
 
   # The wrapper that lets an EC2 server use the role.
   InstanceProfile:
@@ -162,6 +183,8 @@ Resources:
       # A label shown in the console.
       Tags:
         - { Key: Name, Value: counterpoint }
+        # The snapshot schedule below selects servers by this tag.
+        - { Key: Backup, Value: counterpoint }
       # A script that runs once, when the server boots for the first time.
       UserData:
         # The script must be base64-encoded; !Sub fills in the ${...} placeholders inside it.
@@ -213,6 +236,8 @@ Resources:
       DistributionConfig:
         Enabled: true
         Comment: Counterpoint
+        # Attach the firewall when it was requested; otherwise leave this setting out.
+        WebACLId: !If [UseWaf, !GetAtt WebAcl.Arn, !Ref "AWS::NoValue"]
         # Use only the cheapest set of edge locations (North America and Europe).
         PriceClass: PriceClass_100
         HttpVersion: http2
@@ -253,6 +278,118 @@ Resources:
             AllowedMethods: [GET, HEAD]
             Compress: true
             CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6        # Managed-CachingOptimized
+
+  # --- optional firewall (EnableWaf=true) --------------------------------------------------------
+  # A WAF web ACL for CloudFront. CloudFront web ACLs must live in us-east-1.
+  WebAcl:
+    Type: AWS::WAFv2::WebACL
+    Condition: UseWaf
+    Properties:
+      Scope: CLOUDFRONT
+      # Allow requests unless a rule below blocks them.
+      DefaultAction: { Allow: {} }
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: counterpoint-waf
+      Rules:
+        # Rule 1: block an IP address that sends more than 1000 requests in 5 minutes.
+        - Name: rate-limit-per-ip
+          Priority: 1
+          Action: { Block: {} }
+          Statement:
+            RateBasedStatement:
+              Limit: 1000
+              AggregateKeyType: IP
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: counterpoint-rate-limit
+        # Rule 2: AWS's maintained rules against common web attacks.
+        - Name: aws-common-rules
+          Priority: 2
+          OverrideAction: { None: {} }
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: counterpoint-common-rules
+
+  # --- backups: daily snapshots of the server's disk, keeping the last 3 -----------------------
+  # The permission the snapshot scheduler uses (AWS-managed policy).
+  SnapshotRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: dlm.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSDataLifecycleManagerServiceRole
+
+  # Data Lifecycle Manager: snapshots every disk of servers tagged Backup=counterpoint.
+  SnapshotPolicy:
+    Type: AWS::DLM::LifecyclePolicy
+    Properties:
+      Description: Daily snapshots of the Counterpoint server disk
+      State: ENABLED
+      ExecutionRoleArn: !GetAtt SnapshotRole.Arn
+      PolicyDetails:
+        ResourceTypes: [INSTANCE]
+        TargetTags:
+          - { Key: Backup, Value: counterpoint }
+        Schedules:
+          - Name: daily
+            CreateRule: { Interval: 24, IntervalUnit: HOURS, Times: ["03:00"] }
+            RetainRule: { Count: 3 }
+            CopyTags: true
+
+  # --- monitoring: one email when the site looks unhealthy ---------------------------------------
+  # Where alarm messages go; AWS emails AlertEmail a "confirm subscription" message the first time.
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - { Protocol: email, Endpoint: !Ref AlertEmail }
+
+  # Fires when the 5-minute health check (healthcheck.sh) reports a problem for 15 minutes in a row:
+  # the backend is not ready, or no new debate has been created for 36 hours.
+  HealthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Counterpoint backend is not ready, or the daily debate is missing.
+      Namespace: Counterpoint
+      MetricName: Healthy
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      # No data (for example while the server is deliberately stopped to save credits) is not an alarm.
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  # Fires when AWS itself says the virtual machine is broken (hardware or network failure).
+  ServerStatusAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: The EC2 status checks for the Counterpoint server are failing.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed
+      Dimensions:
+        - { Name: InstanceId, Value: !Ref Server }
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
 
   # --- cost guard-rail --------------------------------------------------------------------------
   # A budget that emails a warning when spending gets close to the limit.
