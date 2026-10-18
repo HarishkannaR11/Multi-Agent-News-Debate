@@ -166,6 +166,12 @@ resource "aws_instance" "server" {
   # Changing the script later does not replace a running server (use update.sh on the server instead).
   user_data_replace_on_change = false
 
+  lifecycle {
+    # The first-boot script only runs once. Without this, editing git_ref in terraform.tfvars would make
+    # Terraform stop and start the running server just to store a script that will never run again.
+    ignore_changes = [user_data]
+  }
+
   tags = {
     Name = var.name
     # The snapshot schedule below selects servers by this tag.

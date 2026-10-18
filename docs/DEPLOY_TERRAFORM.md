@@ -66,7 +66,9 @@ After `apply` prints the outputs:
 Everyday operations (updating, changing a key, logs, rotating the admin token) are the same as in
 [`DEPLOY_AWS.md`](DEPLOY_AWS.md#everyday-operations-all-in-session-manager). To change a *Terraform* setting
 (size, budget, `enable_waf`, `git_ref`) edit `terraform.tfvars` and run `terraform apply` again.
-A changed `git_ref` does not redeploy the running server: run `update.sh` on it.
+`git_ref` is only used when the server is first created. Changing it later does nothing to the running
+server (Terraform ignores it on purpose, so it never restarts the server); to deploy newer code run
+`update.sh` on the server (see [`DEPLOY_AWS.md`](DEPLOY_AWS.md#everyday-operations-all-in-session-manager)).
 
 ## Use your own domain (for example krisharish.space)
 

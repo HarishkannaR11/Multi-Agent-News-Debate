@@ -18,7 +18,7 @@ monthly_budget_usd = 40
 instance_type = "c7i-flex.large"
 
 # Which code to deploy
-git_ref = "claude/exciting-faraday-lphld3"
+git_ref = "main"
 
 # Optional AWS WAF in front of CloudFront (about 8 USD a month)
 enable_waf = false

@@ -270,8 +270,7 @@ Set `LOG_FORMAT=json` (the image default) for one-JSON-object-per-line logs.
 
 ## Deploying
 
-- **AWS (using credits): [docs/DEPLOY_AWS.md](docs/DEPLOY_AWS.md).** (The code is on the branch
-  `claude/exciting-faraday-lphld3` until it is merged into `main`.) One CloudFormation form creates
+- **AWS (using credits): [docs/DEPLOY_AWS.md](docs/DEPLOY_AWS.md).** One CloudFormation form creates
   a single EC2 server running Redis, backend and frontend behind Caddy, with HTTPS from CloudFront
   (`deploy/aws/`). Not free for long: expect roughly $35–65/month, which your credits cover for a
   few months, with a budget alert built in.

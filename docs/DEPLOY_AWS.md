@@ -43,11 +43,10 @@ plan (AWS gives a grace period), so don't leave anything you care about only her
 
 ## What you need
 
-1. **Know which branch to deploy.** The server downloads the code from GitHub. All the fixes and
-   this deployment live on the branch **`claude/exciting-faraday-lphld3`**, which is the template's default *GitRef*.
-   [PR #1](https://github.com/HarishkannaR11/Multi-Agent-News-Debate/pull/1) was closed without
-   being merged, so **`main` still holds the original code** (which crashes when it generates a
-   debate). Don't set *GitRef* to `main` until the branch has been merged into it.
+1. **Know which branch is deployed.** The server downloads the code from GitHub. The finished code
+   is on **`main`** (merged in
+   [PR #3](https://github.com/HarishkannaR11/Multi-Agent-News-Debate/pull/3)), which is the
+   template's default *GitRef*.
 2. A **Groq API key** ([console.groq.com](https://console.groq.com)).
 3. A **news API key**: [NewsAPI](https://newsapi.org) or [GNews](https://gnews.io).
 4. An **admin token**: any long random string. In Windows PowerShell:
@@ -89,7 +88,7 @@ just close the page. If none of the four is allowed, you'd need to upgrade to a 
    | MonthlyBudgetUsd | e.g. `40` |
    | InstanceType | one marked *Free tier eligible* in step 2 (default `c7i-flex.large`) |
    | EnableWaf | `false` (default). `true` adds a firewall (about 8 USD/month) and only works in `us-east-1` |
-   | GitRef | `claude/exciting-faraday-lphld3` (leave the default; use `main` only after the branch is merged) |
+   | GitRef | `main` (leave the default) |
    | Leave the rest as they are | |
 
 5. **Next** → **Next** → tick **"I acknowledge that AWS CloudFormation might create IAM
