@@ -102,6 +102,10 @@ backend/
   routers/
     debate.py                 GET /api/debates, GET /api/debate/{id}
     opinion.py                POST /api/opinion/{debate_id}
+    userdebates.py            POST /api/debates (+ retry, followup, feedback), GET /api/archive, GET /api/debates/options
+  userdebate/                 Visitor-question pipeline: schemas (validation, claim labels), sources (real related
+                              articles only), prompts, pipeline (concurrent analysts, retries, partial state),
+                              synthesis (grounded disagreement map, structured verdict), followup
     ws.py                     WS /ws/debate/{id}
   services/
     redis_service.py          key construction, (de)serialization, TTLs
@@ -644,3 +648,19 @@ rebuttal retry loop, live runs never persisted / every page load spending 13 LLM
 calls, deprecated Groq models, `SCAN`-based archive listing (now a sorted-set
 index), scheduler duplication across replicas (Redis lock + admin endpoint), and
 the blind devil's advocate (now runs after the other four).
+
+
+## Visitor-started debates (added)
+
+Flow: `POST /api/debates` validates and normalises the question, deduplicates on
+`client_request_id` (a double click returns the same debate), writes a
+`generating` record and starts `userdebate.pipeline` as a background task.
+Stages: `sources` → `perspectives` (five analysts via `asyncio.gather`, each with
+its own bounded retries, timeout and per-persona idempotency lock) → `synthesis`
+(disagreement map, then verdict; both validated in code: map items must cite
+claim ids that exist and an agreement/conflict needs two analysts; the verdict's
+sufficiency is capped by how many analysts and sources exist). Each analyst is
+persisted the moment it finishes, so a refresh shows partial results. Reads
+reconcile stalled jobs (no job lock) so state is never stuck on `generating`.
+The daily LangGraph pipeline is unchanged; its plain-text debates render in the
+same UI without claims or sources.

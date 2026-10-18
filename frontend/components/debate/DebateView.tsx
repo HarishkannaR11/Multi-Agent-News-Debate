@@ -104,7 +104,7 @@ export function DebateView({ debateId }: { debateId: string }) {
 
   // The browser tab shows the question.
   useEffect(() => {
-    if (debate) document.title = `${debate.question ?? debate.topic} · The Debate`;
+    if (debate) document.title = `${debate.question || debate.topic} · The Debate`;
   }, [debate]);
 
   // Choose the first tab once: a #claim-… link, else the last tab read, else the first finished analyst.
@@ -212,7 +212,7 @@ export function DebateView({ debateId }: { debateId: string }) {
   const done = completedCount(views);
   const failed = views.filter((v) => v.state === "failed").length;
   const claimCount = index.size;
-  const title = debate.question ?? debate.topic;
+  const title = debate.question || debate.topic;
   const verdictData = debate.verdict_data as Partial<Verdict> | undefined;
   const summary = verdictData?.summary || (structured ? "" : debate.verdict);
   const centralQuestion = debate.disagreements?.central_question;
@@ -225,7 +225,7 @@ export function DebateView({ debateId }: { debateId: string }) {
 
       <header id="overview" className="mt-6">
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 font-sans text-sm text-muted">
-          <span>{formatDay(debate.created_at ?? debate.date)}</span>
+          <span>{formatDay(debate.created_at || debate.date)}</span>
           <span aria-hidden="true">·</span>
           <span>{debate.category || (debate.origin === "user" ? "Uncategorised" : "Daily debate")}</span>
           <span aria-hidden="true">·</span>
