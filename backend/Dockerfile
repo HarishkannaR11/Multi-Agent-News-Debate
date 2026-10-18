@@ -2,7 +2,7 @@
 # Build from the repo root:  docker build -f backend/Dockerfile -t counterpoint-backend .
 
 # Start from the official slim Python 3.11 image (a small Debian-based system with Python installed).
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # Environment variables that exist while building AND when the container runs:
 #   PYTHONUNBUFFERED=1        print logs immediately instead of holding them in a buffer
