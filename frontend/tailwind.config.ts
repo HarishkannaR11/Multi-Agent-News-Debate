@@ -23,6 +23,10 @@ const config: Config = {
         warm: "var(--warm)",
         muted: "var(--muted)",
         line: "var(--line)",
+        edge: "var(--edge)",
+        focus: "var(--focus)",
+        warn: "var(--warn)",
+        ok: "var(--ok)",
         // One colour per analyst, used as e.g. "bg-agents-left".
         agents: {
           left: "var(--agent-left)",
@@ -34,7 +38,8 @@ const config: Config = {
       },
       // Adds the "max-w-content" class: the 860px width of the main column.
       maxWidth: {
-        content: "860px",
+        content: "1120px",
+        reading: "720px",
       },
       // Default corner rounding for the "rounded" class: a subtle 2px.
       borderRadius: {

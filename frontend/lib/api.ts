@@ -24,6 +24,19 @@ export type Debate = {
   focus?: string;
   // Each analyst's closing statement from that round, keyed by analyst name.
   crossfire?: Record<string, string>;
+  // Fields below exist only on debates a visitor started from their own question (see lib/debate.ts for the types).
+  origin?: "daily" | "user";
+  question?: string;
+  category?: string;
+  stage?: string;
+  created_at?: string;
+  completed?: number;
+  use_sources?: boolean;
+  perspectives?: Record<string, import("./debate").PerspectiveRecord>;
+  sources?: import("./debate").Source[];
+  disagreements?: import("./debate").Disagreements;
+  verdict_data?: import("./debate").Verdict | Record<string, never>;
+  verdict_error?: string;
 };
 
 /** What GET /api/debates returns: enough for a list, without the full transcript. */
@@ -123,8 +136,10 @@ async function request<T>(path: string, init: RequestInit | undefined, fallback:
   // Will hold the server's response.
   let res: Response;
   try {
-    // Send the request to the base address + path, giving up after 60 seconds.
-    res = await fetch(`${apiBase()}${path}`, { ...init, signal: AbortSignal.timeout(60_000) });
+    // Send the request to the base address + path, giving up after 60 seconds (or sooner if the caller cancels it).
+    const timeout = AbortSignal.timeout(60_000);
+    const signal = init?.signal && typeof AbortSignal.any === "function" ? AbortSignal.any([init.signal, timeout]) : (init?.signal ?? timeout);
+    res = await fetch(`${apiBase()}${path}`, { ...init, signal });
   } catch {
     // The request never reached the server (offline, timeout, blocked): throw a friendly error with status 0.
     throw new ApiError(0, "Could not reach the server. Check your connection and try again.");
@@ -289,4 +304,107 @@ export function connectDebateStream(
       ws?.close();
     },
   };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Debates started from a visitor's own question, follow-ups, feedback and the archive.
+
+// What the "new debate" form needs to know from the server.
+export type DebateOptions = {
+  enabled: boolean;
+  min_chars: number;
+  max_chars: number;
+  categories: string[];
+  per_hour: number;
+  sources_available: boolean;
+};
+
+// Loads the limits and categories for the form.
+export function fetchOptions(): Promise<DebateOptions> {
+  return request("/api/debates/options", undefined, "Could not load the form settings");
+}
+
+// What the form sends to start a debate.
+export type CreateDebateInput = {
+  question: string;
+  category?: string;
+  use_sources: boolean;
+  // A random id made once per form, so a repeated click or a retry returns the same debate.
+  client_request_id: string;
+};
+
+// What the server answers: the new debate's id (or the existing one, when the submission was a duplicate).
+export type CreateDebateResult = { id: string; status: string; deduplicated: boolean };
+
+// Starts a debate from the visitor's own question.
+export function createDebate(input: CreateDebateInput): Promise<CreateDebateResult> {
+  return request(
+    "/api/debates",
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) },
+    "Could not start the debate. Try again."
+  );
+}
+
+// Retries everything that failed, or (with a persona) only that analyst.
+export function retryDebate(debateId: string, persona?: string): Promise<{ id: string; status: string; retrying: string[] }> {
+  const path = persona
+    ? `/api/debates/${encodeURIComponent(debateId)}/perspectives/${encodeURIComponent(persona)}/retry`
+    : `/api/debates/${encodeURIComponent(debateId)}/retry`;
+  return request(path, { method: "POST" }, "Could not retry. Try again.");
+}
+
+// One message of a follow-up conversation.
+export type FollowupTurn = { role: "user" | "assistant"; content: string };
+
+// Asks a question about this debate. The server answers from the debate's own stored material.
+export function askFollowup(
+  debateId: string,
+  question: string,
+  history: FollowupTurn[]
+): Promise<{ debate_id: string; answer: string; references: string[] }> {
+  return request(
+    `/api/debates/${encodeURIComponent(debateId)}/followup`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, history }) },
+    "The debate agents are unavailable. Try again."
+  );
+}
+
+// Sends feedback on how clear and useful the debate was (1 to 5 each).
+export function sendFeedback(debateId: string, clarity: number, usefulness: number, comment: string): Promise<{ ok: boolean }> {
+  return request(
+    `/api/debates/${encodeURIComponent(debateId)}/feedback`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clarity, usefulness, comment }) },
+    "Could not send your feedback. Try again."
+  );
+}
+
+// One row of the archive (a summary: never the full debate).
+export type ArchiveItem = {
+  id: string;
+  date: string;
+  created_at: string;
+  topic: string;
+  category: string;
+  status: string;
+  origin: string;
+  summary: string;
+  completed: number;
+};
+
+// A page of the archive plus what the filters can offer.
+export type ArchiveResponse = { items: ArchiveItem[]; total: number; categories: string[]; offset: number; limit: number };
+
+// What the archive can be filtered by. "ids" restricts it to specific debates (a visitor's own or saved ones).
+export type ArchiveQuery = { q?: string; category?: string; sort?: "newest" | "oldest"; offset?: number; limit?: number; ids?: string[] };
+
+// Searches and filters the archive on the server.
+export function fetchArchive(query: ArchiveQuery, signal?: AbortSignal): Promise<ArchiveResponse> {
+  const params = new URLSearchParams();
+  if (query.q) params.set("q", query.q);
+  if (query.category) params.set("category", query.category);
+  if (query.sort) params.set("sort", query.sort);
+  if (query.offset) params.set("offset", String(query.offset));
+  if (query.limit) params.set("limit", String(query.limit));
+  if (query.ids?.length) params.set("ids", query.ids.join(","));
+  return request(`/api/archive?${params.toString()}`, { signal }, "Failed to load the archive");
 }

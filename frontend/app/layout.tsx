@@ -38,7 +38,15 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     // The <html> tag: English language, with the three font variables attached as CSS classes.
-    <html lang="en" className={`${playfair.variable} ${inter.variable} ${jetbrainsMono.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${playfair.variable} ${inter.variable} ${jetbrainsMono.variable}`}>
+      {/* Applies the visitor's saved light/dark choice before the first paint, so the page never flashes the wrong theme. */}
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem("counterpoint_theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}`,
+          }}
+        />
+      </head>
       {/* The page body: at least full-screen height, paper background, default font and text colour. */}
       <body className="min-h-screen bg-paper font-sans text-ink">
         {/* A centred column with a maximum width and side padding that grows on medium screens and up. */}
