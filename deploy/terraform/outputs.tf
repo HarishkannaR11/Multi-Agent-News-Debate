@@ -1,6 +1,21 @@
 output "site_url" {
   description = "Your site. Give the server 10-15 minutes after apply finishes."
-  value       = "https://${aws_cloudfront_distribution.site.domain_name}"
+  value       = "https://${local.attach ? var.domain_name : aws_cloudfront_distribution.site.domain_name}"
+}
+
+output "cloudfront_address" {
+  description = "The CloudFront address (the site also answers here). With your own domain and dns_provider = registrar, point your domain at this name."
+  value       = aws_cloudfront_distribution.site.domain_name
+}
+
+output "route53_nameservers" {
+  description = "Only with dns_provider = route53: set these 4 name servers at your registrar (where you bought the domain)."
+  value       = local.use_route53 ? aws_route53_zone.site[0].name_servers : []
+}
+
+output "dns_records_to_create_at_registrar" {
+  description = "Only with dns_provider = registrar: the certificate-validation records to create where you manage DNS."
+  value       = local.use_domain && !local.use_route53 ? values(local.validation_records) : []
 }
 
 output "health_check_url" {

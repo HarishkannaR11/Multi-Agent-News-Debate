@@ -259,6 +259,8 @@ resource "aws_cloudfront_distribution" "site" {
   enabled      = true
   comment      = var.name
   http_version = "http2"
+  # Let visitors on IPv6 networks connect too (needed for the AAAA records of your own domain).
+  is_ipv6_enabled = true
   # Use only the cheapest set of edge locations (North America and Europe).
   price_class = "PriceClass_100"
   # Attach the firewall when it was requested.
@@ -308,13 +310,31 @@ resource "aws_cloudfront_distribution" "site" {
     }
   }
 
-  # The free default https://dxxxx.cloudfront.net certificate.
+  # Your own domain (set after the certificate is validated; see domain.tf).
+  aliases = local.attach ? local.hostnames : []
+
+  # Without a custom domain: the free default https://dxxxx.cloudfront.net certificate.
+  # With one: the validated certificate from AWS Certificate Manager.
   viewer_certificate {
-    cloudfront_default_certificate = true
+    cloudfront_default_certificate = local.attach ? null : true
+    acm_certificate_arn            = local.attach ? aws_acm_certificate_validation.site[0].certificate_arn : null
+    ssl_support_method             = local.attach ? "sni-only" : null
+    minimum_protocol_version       = local.attach ? "TLSv1.2_2021" : null
   }
 
   # The origin's DNS name only exists once the address is attached to the server.
   depends_on = [aws_eip_association.server]
+
+  lifecycle {
+    precondition {
+      condition     = !var.attach_domain || var.domain_name != ""
+      error_message = "attach_domain = true needs domain_name to be set."
+    }
+    precondition {
+      condition     = var.dns_provider != "route53" || var.domain_name == "" || endswith(var.domain_name, local.zone_name)
+      error_message = "route53_zone_name must be your domain or its parent, e.g. krisharish.space for krisharish.space or www.krisharish.space."
+    }
+  }
 }
 
 # --- backups: daily snapshots of the server's disk, keeping the last 3 ----------------------------------------

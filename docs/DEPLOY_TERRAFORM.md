@@ -68,6 +68,78 @@ Everyday operations (updating, changing a key, logs, rotating the admin token) a
 (size, budget, `enable_waf`, `git_ref`) edit `terraform.tfvars` and run `terraform apply` again.
 A changed `git_ref` does not redeploy the running server: run `update.sh` on it.
 
+## Use your own domain (for example krisharish.space)
+
+By default the site is on a CloudFront address like `https://d1234abcd.cloudfront.net`. To serve it on your
+own domain, AWS needs to give you an HTTPS certificate for it, and the domain's DNS has to point at CloudFront.
+Do it in **two applies**, because the certificate must be validated before CloudFront can use it. It works the
+same whether the stack already exists or you are creating it now.
+
+First decide **where the domain's DNS is managed**. DNS is the address book of the internet; it is set where you
+bought the domain (your *registrar*) unless you move it.
+
+### Option A (recommended): let AWS Route 53 host the DNS
+
+Costs about 0.50 USD a month. Works for the bare domain (`krisharish.space`) and for `www`. Terraform creates
+every record for you.
+
+1. In `terraform.tfvars` set:
+
+   ```hcl
+   domain_name        = "krisharish.space"
+   extra_domain_names = ["www.krisharish.space"]   # optional: also answer on www
+   dns_provider       = "route53"
+   attach_domain      = false
+   ```
+
+2. `terraform apply`. This creates the certificate, a DNS zone and the validation records (a few minutes).
+3. `terraform output route53_nameservers` prints four names like `ns-123.awsdns-45.org`. **At the place you
+   bought the domain**, switch the domain's *nameservers* to **custom nameservers** and enter those four
+   (usually under Domain → Nameservers; remove the old ones). Save.
+4. Wait for it to spread, usually 5–60 minutes, rarely a few hours. Check the certificate: AWS console →
+   **Certificate Manager**, with the region set to **N. Virginia (us-east-1)** → your certificate must say
+   **Issued**. (CloudFront certificates always live in us-east-1.)
+5. In `terraform.tfvars` change `attach_domain = true`, then `terraform apply`. CloudFront takes 5–15 minutes
+   to update. If the certificate is not issued yet, this apply waits for it; you can stop it with Ctrl+C and
+   repeat the step later.
+6. Open `https://krisharish.space`. From your computer run `deploy/aws/check_site.sh https://krisharish.space`.
+
+### Option B: keep the DNS at your registrar
+
+No AWS DNS fee, but you add the records by hand, and **many registrars cannot point the bare domain
+(`krisharish.space`) at another name**. Use a subdomain such as `www.krisharish.space` or
+`debate.krisharish.space`, then forward the bare domain to it with your registrar's "URL redirect" feature (or use
+an ALIAS/ANAME record if your registrar offers one).
+
+1. In `terraform.tfvars` set:
+
+   ```hcl
+   domain_name   = "www.krisharish.space"
+   dns_provider  = "registrar"
+   attach_domain = false
+   ```
+
+2. `terraform apply`, then `terraform output dns_records_to_create_at_registrar`. It shows a record of type
+   `CNAME` with a long `name` and `value`. Create exactly that record in your registrar's DNS settings. Many
+   registrars want the name **without** your domain at the end (enter `_abc123.www`, not
+   `_abc123.www.krisharish.space.`), and without the trailing dot. **Keep this record forever**: AWS uses it to renew
+   the certificate.
+3. Wait until **Certificate Manager** (region us-east-1) shows **Issued** (usually minutes).
+4. Set `attach_domain = true` and `terraform apply` (5–15 minutes for CloudFront).
+5. `terraform output cloudfront_address` prints the CloudFront name. At your registrar create a **CNAME**:
+   host `www` (or `debate`) → that CloudFront name.
+6. Open `https://www.krisharish.space`.
+
+### Things to know about domains
+
+- The certificate and the Route 53 zone cost nothing extra apart from the 0.50 USD zone fee.
+- If you `terraform destroy` and later create the stack again with Option A, the new DNS zone gets **new
+  nameservers**: update them at your registrar again.
+- The website does not need any change: it already talks to the same address it was loaded from.
+- The CloudFormation template (`DEPLOY_AWS.md`) does not have this feature; use Terraform for a custom domain.
+- I could not test this against a real domain or AWS account. If a step hangs or errors, send me the
+  error text and which step you were on.
+
 ## Tear down
 
 ```bash

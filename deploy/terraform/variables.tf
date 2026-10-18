@@ -113,3 +113,53 @@ variable "enable_waf" {
   default     = false
   description = "Add an AWS WAF web ACL in front of CloudFront (rate limit per IP + AWS common rules). Roughly 8 USD a month."
 }
+
+# --- your own domain name (optional) -------------------------------------------------------------------------
+# Leave domain_name empty to use the free https://dxxxx.cloudfront.net address. To use your own domain, follow
+# docs/DEPLOY_TERRAFORM.md ("Use your own domain"): it takes two applies, because the HTTPS certificate must be
+# validated by DNS before CloudFront can use it.
+
+variable "domain_name" {
+  type        = string
+  default     = ""
+  description = "The address to serve the site on, e.g. krisharish.space or debate.krisharish.space. Empty = use the CloudFront address."
+
+  validation {
+    condition     = var.domain_name == "" || can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", var.domain_name))
+    error_message = "Use lower-case letters, digits, hyphens and dots, e.g. krisharish.space (no https://, no path)."
+  }
+}
+
+variable "extra_domain_names" {
+  type        = list(string)
+  default     = []
+  description = "Additional addresses for the same site, e.g. [\"www.krisharish.space\"]."
+
+  validation {
+    condition     = alltrue([for d in var.extra_domain_names : can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", d))])
+    error_message = "Each extra name must look like www.krisharish.space (lower case, no https://, no path)."
+  }
+}
+
+variable "dns_provider" {
+  type        = string
+  default     = "registrar"
+  description = "Where the domain's DNS records live: \"registrar\" (you add 2 records by hand where you bought the domain) or \"route53\" (AWS hosts the DNS and Terraform adds the records; about 0.50 USD a month)."
+
+  validation {
+    condition     = contains(["registrar", "route53"], var.dns_provider)
+    error_message = "dns_provider must be \"registrar\" or \"route53\"."
+  }
+}
+
+variable "route53_zone_name" {
+  type        = string
+  default     = ""
+  description = "Only for dns_provider = \"route53\": the DNS zone to create, normally your main domain (krisharish.space). Empty = same as domain_name."
+}
+
+variable "attach_domain" {
+  type        = bool
+  default     = false
+  description = "Second step: false = only create the certificate (and DNS zone); true = attach the domain to CloudFront. Set it to true once the certificate shows as Issued."
+}

@@ -22,3 +22,12 @@ git_ref = "claude/exciting-faraday-lphld3"
 
 # Optional AWS WAF in front of CloudFront (about 8 USD a month)
 enable_waf = false
+
+# --- Your own domain (optional; see docs/DEPLOY_TERRAFORM.md, "Use your own domain") ---------------------------
+# Leave domain_name empty to use the free https://dxxxx.cloudfront.net address.
+# It takes TWO applies: first with attach_domain = false, then true once the certificate is Issued.
+domain_name        = ""                       # e.g. "krisharish.space"
+extra_domain_names = []                       # e.g. ["www.krisharish.space"]
+dns_provider       = "route53"                # "route53" (AWS hosts the DNS, easiest) or "registrar" (you add the records by hand)
+route53_zone_name  = ""                       # route53 only; empty = same as domain_name
+attach_domain      = false
