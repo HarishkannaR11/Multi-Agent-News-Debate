@@ -69,6 +69,24 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
 
+  # Job: check the Terraform deployment (formatting and validity; nothing is created).
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/terraform
+    steps:
+      - uses: actions/checkout@v4
+      # Install a pinned Terraform version.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+      # Formatting must match "terraform fmt".
+      - run: terraform fmt -check -recursive
+      # Download the AWS provider (no credentials needed) and check the configuration is valid.
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
   # Job 3: build the Docker images and test them.
   docker:
     # Build both images (no push) so a broken Dockerfile fails the PR, not the deploy,

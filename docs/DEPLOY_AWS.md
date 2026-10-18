@@ -1,5 +1,7 @@
 # Deploy on AWS (using your AWS credits)
 
+> Prefer Terraform to the console? See [`DEPLOY_TERRAFORM.md`](DEPLOY_TERRAFORM.md): the same stack, defined in code. Use one method or the other, not both.
+
 Everything runs on **one EC2 server** that you create from a form in the AWS console. You do not
 install anything on your computer.
 

@@ -1,0 +1,24 @@
+# Copy this file to terraform.tfvars and fill it in. terraform.tfvars is git-ignored; never commit real keys.
+# Safer alternative: leave the secrets out of the file and pass them as environment variables:
+#   export TF_VAR_groq_api_key=...  TF_VAR_admin_token=...  TF_VAR_newsapi_key=...
+
+aws_region = "us-east-1"
+
+# Secrets (the admin token: openssl rand -hex 24)
+groq_api_key  = ""
+newsapi_key   = ""   # NewsAPI and/or GNews: at least one is required
+gnews_api_key = ""
+admin_token   = ""
+
+# Where alarms and budget warnings go (confirm the "Subscription Confirmation" email AWS sends)
+alert_email        = "you@example.com"
+monthly_budget_usd = 40
+
+# Server size: pick one your account may use (EC2 console -> Launch instance shows "Free tier eligible")
+instance_type = "c7i-flex.large"
+
+# Which code to deploy
+git_ref = "claude/exciting-faraday-lphld3"
+
+# Optional AWS WAF in front of CloudFront (about 8 USD a month)
+enable_waf = false

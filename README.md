@@ -275,6 +275,8 @@ Set `LOG_FORMAT=json` (the image default) for one-JSON-object-per-line logs.
   a single EC2 server running Redis, backend and frontend behind Caddy, with HTTPS from CloudFront
   (`deploy/aws/`). Not free for long: expect roughly $35–65/month, which your credits cover for a
   few months, with a budget alert built in.
+- **AWS with Terraform: [docs/DEPLOY_TERRAFORM.md](docs/DEPLOY_TERRAFORM.md).** The same stack as code
+  (`deploy/terraform/`): `terraform apply` instead of the CloudFormation form. Use one or the other.
 - **Vercel + Hugging Face Space + Upstash: [docs/DEPLOY_FREE.md](docs/DEPLOY_FREE.md).** Hugging
   Face now requires its paid PRO plan for Docker Spaces, so the backend part is no longer free.
 - **Any Docker host:** run `backend/Dockerfile` with `REDIS_URL` and the keys from `.env.example`

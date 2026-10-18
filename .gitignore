@@ -17,3 +17,11 @@ out/
 build/
 dist/
 .claude/
+
+# Terraform: local working files and state (the state file contains your secrets; never commit it)
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+*.auto.tfvars
+crash.log
