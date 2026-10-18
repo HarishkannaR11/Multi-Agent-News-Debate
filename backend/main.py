@@ -8,7 +8,7 @@ from redis.exceptions import RedisError  # the error type Redis raises when it f
 
 from .config import settings  # the shared app settings
 from .logging_config import configure_logging  # sets up log formatting
-from .routers import admin, debate, opinion, ws  # the groups of endpoints
+from .routers import admin, debate, opinion, userdebates, ws  # the groups of endpoints
 from .scheduler import start_scheduler, stop_scheduler  # start and stop the daily job
 from .services.redis_service import ping, rebuild_index_if_empty  # Redis helpers used at start-up and for health
 
@@ -56,6 +56,7 @@ app.add_middleware(
 # Attach each group of endpoints to the app.
 app.include_router(debate.router)
 app.include_router(opinion.router)
+app.include_router(userdebates.router)
 app.include_router(ws.router)
 app.include_router(admin.router)
 

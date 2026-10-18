@@ -2,10 +2,11 @@ import json  # converts Python objects to/from JSON text (Redis stores plain tex
 import re  # regular expressions (pattern matching on text)
 import time  # gives the current time as a number
 from datetime import UTC, datetime  # date/time class and the UTC timezone
+from typing import Any  # "any type" (used where redis-py's strict typing would reject a plain dict)
 
 import redis.asyncio as redis  # the async Redis client (named "redis" in this file)
 
-from ..config import settings  # the shared app settings
+from ..config import PERSONA_KEYS, settings  # the five analyst names and the shared app settings
 
 # Pattern for a plain date like "2026-10-01".
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -62,6 +63,14 @@ def parse_debate_id(debate_id: str) -> tuple[str, str] | None:
     return (match.group(1), match.group(2)) if match else None
 
 
+# Parses JSON text from Redis; a missing or damaged value gives the default instead of an error.
+def _loads(text: str | None, default):
+    try:
+        return json.loads(text) if text else default
+    except (TypeError, ValueError):
+        return default
+
+
 # Converts a debate as stored in Redis (all text) back into a normal Python dict.
 def _decode(data: dict) -> dict:
     # Build the dict field by field, using "" when a field is missing.
@@ -77,6 +86,19 @@ def _decode(data: dict) -> dict:
         "arguments": json.loads(data.get("arguments", "{}")),
         "rebuttals": json.loads(data.get("rebuttals", "{}")),
         "bias_scores": json.loads(data.get("bias_scores", "{}")),
+        # Fields used by debates that a visitor started from their own question (empty for daily debates).
+        "origin": data.get("origin", "daily"),
+        "question": data.get("question", ""),
+        "category": data.get("category", ""),
+        "stage": data.get("stage", ""),
+        "updated_at": data.get("updated_at", ""),
+        "use_sources": data.get("use_sources", "0") == "1",
+        "completed": int(data.get("completed", "0") or 0),
+        "sources": _loads(data.get("sources"), []),
+        "disagreements": _loads(data.get("disagreements"), {}),
+        "verdict_data": _loads(data.get("verdict_data"), {}),
+        # One stored field per analyst ("p:left", ...), so parallel tasks never overwrite each other.
+        "perspectives": {p: _loads(data.get(f"p:{p}"), None) for p in PERSONA_KEYS if f"p:{p}" in data},
         # Debates saved before the second round existed simply have no such fields.
         "focus": data.get("focus", ""),
         "crossfire": json.loads(data.get("crossfire", "{}")),
@@ -245,6 +267,9 @@ async def rebuild_index_if_empty() -> int:
         # Skip keys whose date or slug is not valid.
         if not (_DATE_RE.match(date) and slug):
             continue
+        # Debates started by visitors are unlisted: they never go into the public index.
+        if await r.hget(str(raw_key), "origin") == "user":
+            continue
         # Use midnight UTC of the debate's date as its score.
         created = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC).timestamp()
         # Add it to the index.
@@ -315,3 +340,156 @@ async def get_opinions(date: str, topic_slug: str, user_id: str) -> list[dict]:
     raw = await get_redis().lrange(_opinions_key(date, topic_slug, user_id), 0, -1)
     # Parse each JSON text item back into a dict.
     return [json.loads(item) for item in raw]
+
+
+# --- debates started by visitors from their own question ----------------------------------------------------------
+# These are "unlisted": stored like other debates (same key shape, same retention) but never added to the public
+# index, so they do not appear in "latest" or the public archive. Whoever has the link can open one.
+
+JOB_LOCK_TTL = 900  # seconds a generation job may go without a heartbeat before it counts as dead
+
+
+def _job_lock_key(debate_id: str) -> str:
+    return f"joblock:{debate_id}"
+
+
+# Creates the stored record for a new visitor debate, with every analyst "pending". Not added to the public index.
+async def create_user_debate(date: str, slug: str, *, question: str, category: str, use_sources: bool) -> None:
+    now = time.time()
+    key = _debate_key(date, slug)
+    pending = json.dumps({"status": "pending", "attempts": 0, "error": None, "content": None})
+    mapping: dict[Any, Any] = {
+        "origin": "user",
+        "status": "generating",
+        "stage": "queued",
+        "date": date,
+        "created_at": datetime.fromtimestamp(now, tz=UTC).isoformat(),
+        "updated_at": str(now),
+        # The topic IS the visitor's question, so every page that shows "topic" shows exactly what they asked.
+        "topic": question,
+        "question": question,
+        "category": category,
+        "use_sources": "1" if use_sources else "0",
+        "completed": "0",
+        "sources": "[]",
+        "sources_done": "0",
+        "disagreements": "{}",
+        "verdict_data": "{}",
+        "verdict": "",
+        "arguments": "{}",
+        "rebuttals": "{}",
+        "bias_scores": "{}",
+        "focus": "",
+        "crossfire": "{}",
+        "source_url": "",
+        "news_context": "",
+        **{f"p:{persona}": pending for persona in PERSONA_KEYS},
+    }
+    async with get_redis().pipeline(transaction=True) as pipe:
+        pipe.hset(key, mapping=mapping)
+        pipe.expire(key, settings.DEBATE_TTL_SECONDS)
+        await pipe.execute()
+
+
+# Updates some fields of a debate (text values) and stamps the time, which doubles as the job's heartbeat.
+async def update_debate_fields(date: str, slug: str, fields: dict[str, str]) -> None:
+    key = _debate_key(date, slug)
+    # Do not resurrect a debate that has expired mid-job.
+    if await get_redis().exists(key):
+        payload: dict[Any, Any] = {**fields, "updated_at": str(time.time())}
+        await get_redis().hset(key, mapping=payload)
+
+
+# Stores one analyst's state (status, attempts, error, content) under its own field.
+async def set_perspective(date: str, slug: str, persona: str, state: dict) -> None:
+    await update_debate_fields(date, slug, {f"p:{persona}": json.dumps(state)})
+
+
+# Reads a single field of a debate as text, or None.
+async def get_debate_field(date: str, slug: str, field: str) -> str | None:
+    value = await get_redis().hget(_debate_key(date, slug), field)
+    return None if value is None else str(value)
+
+
+# Claims the right to run the generation job for a debate. False if one is already running.
+async def acquire_job_lock(debate_id: str, ttl: int = JOB_LOCK_TTL) -> bool:
+    return bool(await get_redis().set(_job_lock_key(debate_id), "1", nx=True, ex=ttl))
+
+
+# Extends the lock while the job is alive.
+async def refresh_job_lock(debate_id: str, ttl: int = JOB_LOCK_TTL) -> None:
+    await get_redis().expire(_job_lock_key(debate_id), ttl)
+
+
+async def release_job_lock(debate_id: str) -> None:
+    await get_redis().delete(_job_lock_key(debate_id))
+
+
+# Is a job currently alive for this debate?
+async def job_lock_held(debate_id: str) -> bool:
+    return bool(await get_redis().exists(_job_lock_key(debate_id)))
+
+
+# Stores a value only if the key is new (SET NX with an expiry). True when this call stored it.
+async def claim_key(key: str, value: str, ttl: int) -> bool:
+    return bool(await get_redis().set(f"claim:{key}", value, nx=True, ex=ttl))
+
+
+# Reads or overwrites a claimed key (used by the duplicate-submission guard).
+async def get_claim(key: str) -> str | None:
+    value = await get_redis().get(f"claim:{key}")
+    return None if value is None else str(value)
+
+
+async def set_claim(key: str, value: str, ttl: int) -> None:
+    await get_redis().set(f"claim:{key}", value, ex=ttl)
+
+
+async def delete_claim(key: str) -> None:
+    await get_redis().delete(f"claim:{key}")
+
+
+# Stores a visitor's feedback on a debate (newest last, capped, expiring with the debate).
+async def append_feedback(debate_id: str, entry: dict) -> None:
+    key = f"feedback:{debate_id}"
+    r = get_redis()
+    await r.rpush(key, json.dumps(entry))
+    await r.ltrim(key, -200, -1)
+    await r.expire(key, settings.DEBATE_TTL_SECONDS)
+
+
+# The ids in the PUBLIC index (the daily debates), newest first.
+async def public_debate_ids() -> list[str]:
+    return _strs(await get_redis().zrevrange(INDEX_KEY, 0, -1))
+
+
+# Light summaries (no transcripts) for the archive: one pipelined read of a few fields per id.
+async def summaries_for(ids: list[str]) -> list[dict]:
+    """Missing or expired ids are skipped. Only small fields are read, never the full debate."""
+    if not ids:
+        return []
+    fields = ["date", "created_at", "topic", "category", "status", "origin", "verdict", "completed"]
+    async with get_redis().pipeline(transaction=False) as pipe:
+        for debate_id in ids:
+            parsed = parse_debate_id(debate_id)
+            pipe.hmget(_debate_key(*parsed) if parsed else "debate:invalid", fields)
+        rows = await pipe.execute()
+    summaries = []
+    for debate_id, row in zip(ids, rows, strict=True):
+        if not row or row[2] is None:  # no topic stored: the debate does not exist (expired or invalid id)
+            continue
+        date, created_at, topic, category, status, origin, verdict, completed = (
+            "" if value is None else str(value) for value in row
+        )
+        summaries.append({
+            "id": debate_id,
+            "date": date or debate_id.split(":", 1)[0],
+            "created_at": created_at,
+            "topic": topic,
+            "category": category,
+            "status": status,
+            "origin": origin or "daily",
+            "summary": verdict[:240],
+            "completed": int(completed or 0),
+        })
+    return summaries

@@ -105,6 +105,33 @@ class Settings:
     # How many proxies sit in front of the app (used to pick the right IP from the header).
     TRUSTED_PROXY_HOPS = int(os.environ.get("TRUSTED_PROXY_HOPS", 1))
 
+    # --- debates started by visitors from their own question ---
+    # Master switch: false hides the feature (the endpoint answers 503) so nobody can spend LLM credits.
+    USER_DEBATES_ENABLED = _bool("USER_DEBATES_ENABLED", True)
+    # Shortest and longest question accepted (after trimming and collapsing whitespace).
+    USER_DEBATE_MIN_CHARS = int(os.environ.get("USER_DEBATE_MIN_CHARS", 10))
+    USER_DEBATE_MAX_CHARS = int(os.environ.get("USER_DEBATE_MAX_CHARS", 500))
+    # Debates one client (IP address) may start per hour.
+    USER_DEBATE_RATE_LIMIT = int(os.environ.get("USER_DEBATE_RATE_LIMIT", 3))
+    # Debates ALL visitors together may start per day (each costs about 7 LLM calls). 0 = no cap.
+    USER_DEBATES_PER_DAY = int(os.environ.get("USER_DEBATES_PER_DAY", 40))
+    # Debates this server process may generate at the same time (each uses several parallel LLM calls).
+    USER_DEBATE_MAX_CONCURRENT = int(os.environ.get("USER_DEBATE_MAX_CONCURRENT", 3))
+    # LLM calls one debate may have in flight at once (the free Groq tier rate-limits parallel calls).
+    LLM_CONCURRENCY = int(os.environ.get("LLM_CONCURRENCY", 4))
+    # Attempts per perspective before it is marked failed (malformed output, blocked text, provider errors).
+    PERSPECTIVE_MAX_ATTEMPTS = int(os.environ.get("PERSPECTIVE_MAX_ATTEMPTS", 3))
+    # Seconds to wait before the first retry; doubles each time (1.5, 3, 6 ...).
+    PERSPECTIVE_BACKOFF_SECONDS = float(os.environ.get("PERSPECTIVE_BACKOFF_SECONDS", 1.5))
+    # Longest one attempt may take before it counts as failed.
+    PERSPECTIVE_TIMEOUT_SECONDS = float(os.environ.get("PERSPECTIVE_TIMEOUT_SECONDS", 150))
+    # How many related news articles to look up as sources for a visitor's question (0 = none).
+    USER_DEBATE_SOURCES_MAX = int(os.environ.get("USER_DEBATE_SOURCES_MAX", 5))
+    # Follow-up questions about a debate: allowed per client per hour.
+    FOLLOWUP_RATE_LIMIT_PER_HOUR = int(os.environ.get("FOLLOWUP_RATE_LIMIT_PER_HOUR", 30))
+    # Feedback submissions per client per hour.
+    FEEDBACK_RATE_LIMIT_PER_HOUR = int(os.environ.get("FEEDBACK_RATE_LIMIT_PER_HOUR", 20))
+
     # Websites allowed to call this API from a browser: split the comma-separated value, trim each, drop blanks.
     CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
 
