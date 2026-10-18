@@ -4,7 +4,7 @@
 # Multi-stage build: three stages (deps -> build -> run); only the last stage becomes the final image.
 # ---- Stage 1 "deps": install the npm packages ----
 # Start from a small Linux image with Node.js 22 and name this stage "deps".
-FROM node:22-alpine AS deps
+FROM node:26-alpine AS deps
 # Work inside /app.
 WORKDIR /app
 # Copy only the package files first, so this step is cached until the dependencies change.
@@ -13,7 +13,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 # ---- Stage 2 "build": compile the website ----
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 # NEXT_PUBLIC_* values are inlined into the browser bundle at build time.
 # Leave both empty to call the same origin (a load balancer routing /api and /ws to the backend).
@@ -35,7 +35,7 @@ COPY . .
 RUN npm run build
 
 # ---- Stage 3 "run": the small image that actually runs ----
-FROM node:22-alpine AS run
+FROM node:26-alpine AS run
 WORKDIR /app
 # Run in production mode, no telemetry, listen on port 3000 on all network interfaces (0.0.0.0).
 ENV NODE_ENV=production \
