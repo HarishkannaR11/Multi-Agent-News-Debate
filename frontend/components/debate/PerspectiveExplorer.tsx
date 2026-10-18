@@ -221,7 +221,7 @@ export function PerspectiveExplorer({
         </div>
       </div>
 
-      <div role="tablist" aria-label="Perspectives" className="mt-5 flex gap-1 overflow-x-auto border-b border-line">
+      <div role="tablist" aria-label="Perspectives" className="relative mt-5 flex gap-1 overflow-x-auto border-b border-line">
         {views.map((view) => {
           const active = view.persona === selected;
           const state = STATE_TEXT[view.state];
