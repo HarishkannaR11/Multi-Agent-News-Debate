@@ -133,7 +133,7 @@ From now on a new debate is generated every day at 07:00 UTC.
 | Watch the first-boot progress | `sudo tail -f /var/log/counterpoint-bootstrap.log` |
 | Backend logs | `sudo docker compose -f /opt/counterpoint/app/deploy/aws/docker-compose.yml logs -f backend` |
 | Generate another debate | `sudo FORCE=true /opt/counterpoint/app/deploy/aws/run-daily.sh` |
-| Update to the latest code | `sudo /opt/counterpoint/app/deploy/aws/update.sh` |
+| Update to the latest code | `sudo /opt/counterpoint/app/deploy/aws/update.sh` (or from CloudShell: `deploy/aws/redeploy.sh`, see [`DEPLOY_TERRAFORM.md`](DEPLOY_TERRAFORM.md#deploy-a-change-to-the-product)) |
 | Change a key | Secrets Manager → open the secret → edit; then run the update command above |
 | Rotate the admin token | Secrets Manager → edit `ADMIN_TOKEN` → run the update command above. Also update the `ADMIN_TOKEN` secret in GitHub if you use the *Daily debate* workflow |
 | Run the health check by hand | `sudo bash -c '. /etc/counterpoint.env && /opt/counterpoint/app/deploy/aws/healthcheck.sh'` |
