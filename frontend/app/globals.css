@@ -3,36 +3,64 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Colour variables used across the site (tailwind.config.ts maps names like "ink" to these). */
+/* Colour tokens. Every text colour below measures at least 4.5:1 against both the page and the card background in its
+   theme (checked with a WCAG contrast calculation); --edge (borders of inputs and buttons) is at least 3:1. */
 :root {
-  /* Page background (light, warm off-white). */
-  --paper: #FAFAF7;
-  /* Card and input background. */
-  --surface: #FFFFFF;
-  /* Thin divider lines and borders. */
-  --line: #E2E0D8;
-  /* Main text colour. */
-  --ink: #1A1A18;
-  /* Secondary text colour. */
-  --warm: #6B6860;
-  /* Faint text colour (labels, placeholders). */
-  --muted: #9E9B94;
-  /* One accent colour per analyst. */
-  --agent-left: #C0392B;
+  --paper: #FAFAF7;      /* page background */
+  --surface: #FFFFFF;    /* cards and inputs */
+  --line: #CFCBBF;       /* decorative dividers */
+  --edge: #85817A;       /* borders of controls */
+  --ink: #1A1A18;        /* main text */
+  --warm: #4F4C45;      /* secondary text */
+  --muted: #66635B;      /* labels and captions */
+  --focus: #1B4FD1;      /* keyboard focus ring */
+  --warn: #8A4B00;       /* caution text */
+  --ok: #1F6B3A;        /* positive text */
+  --agent-left: #A8302A;
   --agent-right: #1A3A5C;
-  --agent-econ: #B8860B;
-  --agent-geo: #2E5E3A;
+  --agent-econ: #7F5D05;
+  --agent-geo: #2A5836;
   --agent-devil: #4A3060;
 }
 
-/* If the visitor's device is set to dark mode, override the colours that need to change. */
+/* Dark theme values, used when the device prefers dark and the visitor has not chosen light... */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --paper: #121210;
     --surface: #1C1C1A;
-    --line: #2E2E2A;
+    --line: #3A3A35;
+    --edge: #8C8980;
     --ink: #F0EFE8;
+    --warm: #C2BFB5;
+    --muted: #A19E94;
+    --focus: #7FA9FF;
+    --warn: #E5A04D;
+    --ok: #7FCB96;
+    --agent-left: #EE8A7F;
+    --agent-right: #86AEDD;
+    --agent-econ: #E5B754;
+    --agent-geo: #78C690;
+    --agent-devil: #BFA3E0;
   }
+}
+
+/* ...or when the visitor chose dark with the theme button (the choice is stored in data-theme). */
+:root[data-theme="dark"] {
+  --paper: #121210;
+  --surface: #1C1C1A;
+  --line: #3A3A35;
+  --edge: #8C8980;
+  --ink: #F0EFE8;
+  --warm: #C2BFB5;
+  --muted: #A19E94;
+  --focus: #7FA9FF;
+  --warn: #E5A04D;
+  --ok: #7FCB96;
+  --agent-left: #EE8A7F;
+  --agent-right: #86AEDD;
+  --agent-econ: #E5B754;
+  --agent-geo: #78C690;
+  --agent-devil: #BFA3E0;
 }
 
 /* Make width/height include padding and borders, which makes sizes easier to reason about. */
@@ -40,35 +68,59 @@
   box-sizing: border-box;
 }
 
-/* Remove the browser's default margin around the page. */
 body {
   margin: 0;
+  /* Long words and URLs must wrap instead of pushing the page sideways. */
+  overflow-wrap: anywhere;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* A clearly visible focus ring for keyboard users, on every interactive element. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Jumping to an anchor (a source, a claim, the verdict) must not hide it under the sticky bars. */
+[id] {
+  scroll-margin-top: 7rem;
+}
+
+/* Text selection stays readable in both themes. */
+::selection {
+  background: var(--ink);
+  color: var(--paper);
 }
 
 /* Only animate for visitors who have not asked their device to reduce motion. */
 @media (prefers-reduced-motion: no-preference) {
-  /* The pulsing dot for an analyst who is writing. */
+  html {
+    scroll-behavior: smooth;
+  }
   .dot-pulse {
     animation: dot-pulse 1s ease-in-out infinite;
   }
-  /* New content fades in over 0.3 seconds. */
   .fade-in {
-    animation: fade-in 300ms ease;
+    animation: fade-in 200ms ease;
   }
-  /* The tab underline grows and shrinks smoothly. */
-  .tab-underline {
-    transition: width 150ms ease;
+  .skeleton {
+    animation: dot-pulse 1.4s ease-in-out infinite;
   }
 }
 
-/* Pulse: fully visible at the start and end, dimmed in the middle. */
 @keyframes dot-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  50% { opacity: 0.5; }
 }
 
-/* Fade in: from invisible to fully visible. */
 @keyframes fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+/* A highlighted target after jumping to it from a link (a source or claim reference). */
+:target {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
 }

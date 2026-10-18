@@ -4,10 +4,8 @@ How to present this project in an interview: the pitch, the stack, the architect
 through the backend, the requests and responses, the code worth knowing, the bugs you fixed, and the
 questions interviewers tend to ask.
 
-> **Which code to show.** The finished project is on the branch `claude/exciting-faraday-lphld3`.
-> The `main` branch still holds the original first version (it crashes when it generates a debate,
-> and has none of the guardrails, tests or deployment work described here). Merge the branch into
-> `main` (or show the branch) before an interviewer looks at the repository.
+> **Which code to show.** The finished project is on the `main` branch (merged in pull request #3),
+> including the guardrails, tests, CI and deployment work described here.
 
 ---
 

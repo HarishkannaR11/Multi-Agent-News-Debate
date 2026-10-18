@@ -1,42 +1,42 @@
 // Next.js's Link component: navigates between pages without a full page reload.
 import Link from "next/link";
+import { ThemeToggle } from "./ThemeToggle";
 
-// The site header: title, tagline and navigation. Both props are optional.
-export function Header({ date, topicCount }: { date?: string; topicCount?: number }) {
+// The site header: compact and sticky, with the four main actions always in reach.
+// "current" marks the page the visitor is on, for the visual highlight and for screen readers.
+export function Header({ current }: { current?: "latest" | "archive" | "new" }) {
+  // Shared look of the plain text links.
+  const link = (active: boolean) =>
+    `rounded px-2 py-1.5 font-sans text-sm hover:bg-surface hover:text-ink ${active ? "text-ink underline underline-offset-4" : "text-warm"}`;
   return (
-    // A thick line under the header separates it from the page.
-    <header className="border-b-2 border-ink pb-6 pt-8">
-      {/* Top row: the site title on the left, the date (if any) on the right. */}
-      <div className="flex items-baseline justify-between">
-        <h1 className="font-serif text-[48px] font-bold leading-none tracking-[-0.02em] text-ink">
-          {/* Clicking the title goes to the home page. */}
-          <Link href="/">The Debate</Link>
-        </h1>
-        {/* Only show the date if one was passed in. */}
-        {date && <p className="font-sans text-xs uppercase tracking-[0.04em] text-muted">{date}</p>}
-      </div>
-      {/* Second row: the tagline on the left, the navigation links on the right. */}
-      <div className="mt-2 flex items-baseline justify-between">
-        <p className="font-sans text-xs uppercase tracking-[0.04em] text-warm">
-          Five perspectives. One verdict.
-        </p>
-        {/* The main navigation (labelled "Primary" for screen readers). */}
-        <nav aria-label="Primary" className="flex gap-6 font-sans text-xs uppercase tracking-[0.04em] text-muted">
-          {/* Show "N topic(s)" only when a count was given; note 0 still counts as given. */}
-          {topicCount !== undefined && (
-            <span>
-              {/* Singular for exactly 1, plural otherwise. */}
-              {topicCount} {topicCount === 1 ? "topic" : "topics"}
-            </span>
-          )}
-          {/* Link to the latest debate (the home page). */}
-          <Link href="/" className="hover:text-ink hover:underline">
+    <header className="sticky top-0 z-30 -mx-6 border-b border-line bg-paper/95 px-6 backdrop-blur md:-mx-12 md:px-12">
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3">
+        <Link href="/" className="font-serif text-2xl font-bold leading-none tracking-[-0.02em] text-ink">
+          The Debate
+          {/* The tagline is part of the name for screen readers but hidden on small screens to save space. */}
+          <span className="ml-3 hidden font-sans text-xs font-normal uppercase tracking-[0.06em] text-muted lg:inline">
+            Five perspectives. One verdict.
+          </span>
+        </Link>
+        <nav aria-label="Primary" className="flex flex-wrap items-center gap-1 sm:gap-2">
+          <Link href="/" className={link(current === "latest")} aria-current={current === "latest" ? "page" : undefined}>
             Latest
           </Link>
-          {/* Link to the list of past debates. */}
-          <Link href="/archive" className="hover:text-ink hover:underline">
+          <Link href="/archive" className={link(current === "archive")} aria-current={current === "archive" ? "page" : undefined}>
             Archive
           </Link>
+          {/* Opens the archive with the search box focused. */}
+          <Link href="/archive#search" className={link(false)}>
+            Search
+          </Link>
+          <Link
+            href="/new"
+            aria-current={current === "new" ? "page" : undefined}
+            className="rounded bg-ink px-3.5 py-2 font-sans text-sm font-medium text-paper hover:opacity-90"
+          >
+            New debate
+          </Link>
+          <ThemeToggle />
         </nav>
       </div>
     </header>

@@ -66,7 +66,42 @@ After `apply` prints the outputs:
 Everyday operations (updating, changing a key, logs, rotating the admin token) are the same as in
 [`DEPLOY_AWS.md`](DEPLOY_AWS.md#everyday-operations-all-in-session-manager). To change a *Terraform* setting
 (size, budget, `enable_waf`, `git_ref`) edit `terraform.tfvars` and run `terraform apply` again.
-A changed `git_ref` does not redeploy the running server: run `update.sh` on it.
+`git_ref` is only used when the server is first created. Changing it later does nothing to the running
+server (Terraform ignores it on purpose, so it never restarts the server); to deploy newer code run
+`update.sh` on the server (see [`DEPLOY_AWS.md`](DEPLOY_AWS.md#everyday-operations-all-in-session-manager)).
+
+## Deploy a change to the product
+
+Changing the app does **not** need Terraform. The server runs whatever is on GitHub, so a code change goes:
+
+1. **Change the code and merge it into `main`** on GitHub (pull request → *Merge*). CI runs the tests and builds
+   the images on every pull request; wait for it to be green. Anything not on GitHub is not deployed.
+2. **Tell the server to update.** In CloudShell:
+
+   ```bash
+   cd ~/Multi-Agent-News-Debate && git pull          # get the latest scripts
+   deploy/aws/redeploy.sh
+   ```
+
+   It makes the server follow `main`, pulls the new code, rebuilds only what changed and restarts the
+   containers, then waits and prints the result (a few minutes; the site may blink for under a minute while
+   the changed containers restart). It reads the server's id and region from `deploy/terraform`
+   (`INSTANCE_ID=... AWS_REGION=...` override them; `GIT_REF=some-branch` deploys another branch).
+   The same thing by hand: Session Manager on the server → `sudo /opt/counterpoint/app/deploy/aws/update.sh`.
+3. **Check it:** open the site, and optionally run `deploy/aws/check_site.sh https://<your site>`.
+
+Which tool for which change:
+
+| You changed | Do this |
+|---|---|
+| App code (backend, frontend, prompts) | Merge to `main`, then `deploy/aws/redeploy.sh` |
+| An API key, the admin token or other secret | AWS console → Secrets Manager → `counterpoint-app-secrets` → edit, then `deploy/aws/redeploy.sh` (it rewrites the server's settings) |
+| Server size, budget, firewall, domain | Edit `terraform.tfvars`, `terraform plan`, `terraform apply` |
+| Only the docs | Nothing to deploy |
+
+A bad deployment can be undone by deploying the previous good commit: `GIT_REF=<old tag or branch> deploy/aws/redeploy.sh`.
+The debates already saved are kept in Redis (a Docker volume) and survive a redeploy; they are lost only if the
+server is destroyed.
 
 ## Use your own domain (for example krisharish.space)
 

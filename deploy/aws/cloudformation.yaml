@@ -73,10 +73,10 @@ Parameters:
   # Which branch or tag of that repository to deploy.
   GitRef:
     Type: String
-    Default: claude/exciting-faraday-lphld3
+    Default: main
     Description: >-
-      Branch or tag to deploy. The reviewed code is on this branch; once it has been merged into main,
-      enter main instead. (main alone is NOT enough until then: it still has the original code.)
+      Branch or tag to deploy. The reviewed code is on main; enter another branch or a tag to deploy
+      that instead.
   # The operating-system image. This special type makes AWS look up the value in the Systems Manager
   # Parameter Store, so the newest Ubuntu 24.04 image id for your region is found automatically.
   ImageId:

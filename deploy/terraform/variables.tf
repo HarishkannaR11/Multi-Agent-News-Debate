@@ -104,8 +104,8 @@ variable "repo_url" {
 
 variable "git_ref" {
   type        = string
-  default     = "claude/exciting-faraday-lphld3"
-  description = "Branch or tag to deploy. Use main only after the reviewed code has been merged into it."
+  default     = "main"
+  description = "Branch or tag to deploy (only read when the server is first created; use update.sh on the server later)."
 }
 
 variable "enable_waf" {

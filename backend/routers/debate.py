@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query  # endpoint group, error response, URL option
 
 from ..services.redis_service import get_debate, list_debates, parse_debate_id, resolve_debate_id  # Redis helpers
+from ..userdebate.pipeline import reconcile_stalled  # repairs a visitor debate whose job died
 
 # A group of endpoints that all start with "/api" and are labelled "debates" in the API docs.
 router = APIRouter(prefix="/api", tags=["debates"])
@@ -27,5 +28,7 @@ async def get_debate_by_id(debate_id: str):
     # If anything was missing, reply with a 404 "not found" error.
     if not resolved or not debate:
         raise HTTPException(status_code=404, detail="Debate not found")
+    # A visitor's debate that says "generating" but has no live job (server restarted) becomes retryable here.
+    debate = await reconcile_stalled(resolved, debate)
     # Return the debate with its id added at the start.
     return {"id": resolved, **debate}

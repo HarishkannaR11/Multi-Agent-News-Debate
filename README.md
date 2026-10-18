@@ -225,6 +225,13 @@ later restarts take ~30s. Expect this to need a couple of GB of free RAM.
 | `GET /api/debate/{id}` | Full debate: arguments, rebuttals, verdict, bias scores |
 | `POST /api/opinion/{debate_id}` | Submit an opinion (≤1000 chars, rate-limited) → agree/challenge/expand response |
 | `GET /api/opinions/{debate_id}?user_id=` | A user's stored opinion thread |
+| `GET /api/debates/options` | Limits, categories and whether news sources are available (drives the New Debate form) |
+| `POST /api/debates` | Start a debate from a visitor's own question → `202 {id, status, deduplicated}`. Validated, rate-limited, idempotent per `client_request_id` |
+| `POST /api/debates/{id}/retry` | Retry every failed analyst (and the verdict if needed) |
+| `POST /api/debates/{id}/perspectives/{persona}/retry` | Retry one analyst only |
+| `POST /api/debates/{id}/followup` | Ask a question answered only from this debate's claims, sources and verdict |
+| `POST /api/debates/{id}/feedback` | Clarity / usefulness ratings (1-5) and an optional comment |
+| `GET /api/archive?q&category&sort&offset&limit&ids` | Server-side search, category filter, sort and paging; `ids` restricts to a visitor's own or saved debates |
 | `WS /ws/debate/{id}` | Replays a stored debate as `debating` → `rebuttal` → `done` events; closes with code 4404 if not found |
 | `POST /internal/run-daily` | Generate today's debate. Requires `X-Admin-Token`; idempotent (`?force=true` overrides) |
 | `GET /health`, `GET /health/ready` | Liveness / Redis readiness |
@@ -233,6 +240,29 @@ later restarts take ~30s. Expect this to need a couple of GB of free RAM.
 `latest`. Malformed ids return 404.
 
 Interactive docs at `http://localhost:8000/docs`.
+
+### Debates started from a visitor's own question
+
+`POST /api/debates` stores the exact (whitespace-normalised) question and runs the
+five analysts **concurrently**, then a moderator step builds a claim-grounded
+disagreement map and a structured verdict. The page polls `GET /api/debate/{id}`
+while `status` is `generating` (`stage`: sources → perspectives → synthesis).
+
+- Each analyst returns validated JSON (position, strongest argument, claims,
+  counterargument, assumptions, uncertainties); bad output is retried with
+  backoff (`PERSPECTIVE_MAX_ATTEMPTS`), then marked `failed` for that analyst
+  only. Final status is `done`, `partial` (≥1 failed) or `failed`.
+- Claims are labelled `opinion`, `assumption`, `unverified` or `disputed`.
+  **Nothing is ever labelled `verified`**: there is no fact-checking step.
+  Citations may only point at real related articles (`S1`…); invented ids are
+  dropped. Sources need `NEWSAPI_KEY` or `GNEWS_API_KEY`.
+- Visitor debates are **unlisted** (random 10-hex id, not in the public index);
+  "My debates" and "Saved" are remembered per browser (no accounts).
+- Limits and kill-switch: `USER_DEBATES_ENABLED`, `USER_DEBATE_RATE_LIMIT` (per
+  IP per hour), `USER_DEBATES_PER_DAY` (site-wide, 0 = unlimited),
+  `USER_DEBATE_MAX_CONCURRENT`, `USER_DEBATE_MIN_CHARS/MAX_CHARS`. A debate costs
+  about 7 LLM calls. If a worker dies, the next read marks unfinished analysts
+  failed so the page never spins forever; use Retry.
 
 ## Project layout
 
@@ -244,8 +274,11 @@ backend/
   services/       Redis and LangSmith helpers
   config.py       Env vars and the Groq client wrapper
 frontend/
-  app/            Home (live debate), /debate/[id], /archive
-  components/     AgentCard, BiasChart, VerdictPanel, OpinionBox, etc.
+  app/            Home (latest daily debate), /new, /debate/[id], /archive
+  components/     DebateComposer, OpinionBox, BiasChart, Header, ThemeToggle
+  components/debate/  DebateView (page container + polling), PerspectiveExplorer,
+                  ClaimList, DisagreementMap, VerdictSection, SourcesSection,
+                  FollowUp, FeedbackForm, DebateActions, GenerationStatus
 ```
 
 ## Design
@@ -270,8 +303,7 @@ Set `LOG_FORMAT=json` (the image default) for one-JSON-object-per-line logs.
 
 ## Deploying
 
-- **AWS (using credits): [docs/DEPLOY_AWS.md](docs/DEPLOY_AWS.md).** (The code is on the branch
-  `claude/exciting-faraday-lphld3` until it is merged into `main`.) One CloudFormation form creates
+- **AWS (using credits): [docs/DEPLOY_AWS.md](docs/DEPLOY_AWS.md).** One CloudFormation form creates
   a single EC2 server running Redis, backend and frontend behind Caddy, with HTTPS from CloudFront
   (`deploy/aws/`). Not free for long: expect roughly $35–65/month, which your credits cover for a
   few months, with a budget alert built in.
