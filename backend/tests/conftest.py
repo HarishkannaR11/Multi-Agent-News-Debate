@@ -46,6 +46,8 @@ class LLMRecorder:
     # Start with an empty list of recorded calls.
     def __init__(self):
         self.calls: list[dict] = []
+        # What the moderator's "do we need another round?" call answers; tests change this.
+        self.review_reply = '{"needs_second_round": false, "focus": ""}'
 
     # Makes the object callable like a function, with the same parameters as the real llm.invoke.
     def __call__(self, system, user, max_tokens=1024, fast=False):
@@ -55,6 +57,10 @@ class LLMRecorder:
         # The bias auditor must return JSON scores.
         if "bias auditor" in system:
             return '{"left": 0.7, "right": 0.6, "economist": 0.2, "geopolitical": 0.3, "devil": 0.4}'
+        # The moderator's second-round decision: by default "no extra round" (tests opt in by overriding this).
+        # Checked before the verdict because its prompt also contains the words "debate moderator".
+        if "needs_second_round" in system:
+            return self.review_reply
         # The moderator returns a verdict sentence.
         if "debate moderator" in system:
             return "A balanced verdict."
@@ -73,7 +79,11 @@ class LLMRecorder:
         # That analyst's system prompt.
         text = agents.PERSONAS[persona_key]
         # Keep calls that used this prompt AND mention "rebuttal" in the user message.
-        return [c for c in self.calls if c["system"].startswith(text) and "rebuttal" in c["user"].lower()]
+        # (Second-round closing statements also mention rebuttals, so they are excluded explicitly.)
+        return [
+            c for c in self.calls
+            if c["system"].startswith(text) and "rebuttal" in c["user"].lower() and "closing statement" not in c["user"]
+        ]
 
 
 # A fixture that replaces the real LLM with the recorder.

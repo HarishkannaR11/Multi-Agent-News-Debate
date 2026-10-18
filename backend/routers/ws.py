@@ -55,6 +55,8 @@ async def debate_ws(websocket: WebSocket, debate_id: str):
             **base, "node": "replay", "status": "done",
             "data": debate["arguments"], "rebuttals": debate["rebuttals"],
             "verdict": debate["verdict"], "bias_scores": debate["bias_scores"],
+            # The optional second round (empty for debates that did not have one).
+            "focus": debate.get("focus", ""), "crossfire": debate.get("crossfire", {}),
         })
         # Normal close: the replay is finished.
         await websocket.close()

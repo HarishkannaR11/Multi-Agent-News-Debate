@@ -69,6 +69,24 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
 
+  # Job: check the Terraform deployment (formatting and validity; nothing is created).
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/terraform
+    steps:
+      - uses: actions/checkout@v4
+      # Install a pinned Terraform version.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+      # Formatting must match "terraform fmt".
+      - run: terraform fmt -check -recursive
+      # Download the AWS provider (no credentials needed) and check the configuration is valid.
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
   # Job 3: build the Docker images and test them.
   docker:
     # Build both images (no push) so a broken Dockerfile fails the PR, not the deploy,
@@ -102,6 +120,18 @@ jobs:
       # Run "id -u" in the container; fail if it prints 0 (0 = root).
       - name: Backend runs unprivileged
         run: test "$(docker run --rm counterpoint-backend:ci id -u)" != "0"
+
+      # Scan both images for known vulnerabilities in operating-system packages and libraries.
+      # Only CRITICAL problems that already have a fix available fail the build (high noise otherwise).
+      # Trivy runs from its official image (pinned version) and reads the images from the local Docker.
+      - name: Scan the images for vulnerabilities (Trivy)
+        run: |
+          for image in counterpoint-backend:ci counterpoint-frontend:ci; do
+            echo "::group::trivy $image"
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.71.2 \
+              image --severity CRITICAL --ignore-unfixed --exit-code 1 "$image"
+            echo "::endgroup::"
+          done
 
       - name: Guardrail models load offline as the runtime user
         # --network none proves the models were baked in at build time and that the unprivileged

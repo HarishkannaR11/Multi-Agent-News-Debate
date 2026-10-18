@@ -77,6 +77,9 @@ def _decode(data: dict) -> dict:
         "arguments": json.loads(data.get("arguments", "{}")),
         "rebuttals": json.loads(data.get("rebuttals", "{}")),
         "bias_scores": json.loads(data.get("bias_scores", "{}")),
+        # Debates saved before the second round existed simply have no such fields.
+        "focus": data.get("focus", ""),
+        "crossfire": json.loads(data.get("crossfire", "{}")),
     }
 
 
@@ -113,6 +116,9 @@ async def save_debate(date: str, topic_slug: str, state: dict) -> str:
             "arguments": json.dumps(state.get("arguments", {})),
             "rebuttals": json.dumps(state.get("rebuttals", {})),
             "bias_scores": json.dumps(state.get("bias_scores", {})),
+            # The optional second round: the moderator's question and the analysts' answers.
+            "focus": state.get("focus", ""),
+            "crossfire": json.dumps(state.get("crossfire", {})),
         })
         # Make the debate expire automatically after the retention period.
         pipe.expire(key, settings.DEBATE_TTL_SECONDS)

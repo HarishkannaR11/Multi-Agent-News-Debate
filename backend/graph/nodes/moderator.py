@@ -33,7 +33,7 @@ VERDICT_FALLBACK = (
 
 
 # Turns the debate into one text transcript for the moderator to read.
-def _transcript(state: DebateState) -> str:
+def debate_transcript(state: DebateState) -> str:
     # Collect the lines of the transcript here.
     parts = []
     # Go through each analyst that wrote an opening argument.
@@ -45,6 +45,11 @@ def _transcript(state: DebateState) -> str:
         # Add it only if it exists.
         if rebuttal:
             parts.append(f"[{key}] Rebuttal: {rebuttal}")
+        # Look up their closing statement from the optional second round.
+        closing = state.get("crossfire", {}).get(key)
+        # Add it (with the moderator's question) only if that round happened and this analyst answered.
+        if closing:
+            parts.append(f"[{key}] Closing statement on \"{state.get('focus', '')}\": {closing}")
     # Join everything with blank lines between entries.
     return "\n\n".join(parts)
 
@@ -87,7 +92,7 @@ def moderator_node(state: DebateState) -> dict:
     if not state.get("arguments"):
         raise RuntimeError("No analyst argument passed the output guardrail; nothing to moderate")
     # Build the transcript the moderator will read.
-    transcript = _transcript(state)
+    transcript = debate_transcript(state)
 
     # The message sent to the model: topic, transcript and the request.
     verdict_prompt = f"Topic: {state['topic']}\n\nFull debate transcript:\n{transcript}\n\nWrite the verdict now."

@@ -1,5 +1,7 @@
 # Deploy on AWS (using your AWS credits)
 
+> Prefer Terraform to the console? See [`DEPLOY_TERRAFORM.md`](DEPLOY_TERRAFORM.md): the same stack, defined in code. Use one method or the other, not both.
+
 Everything runs on **one EC2 server** that you create from a form in the AWS console. You do not
 install anything on your computer.
 
@@ -86,6 +88,7 @@ just close the page. If none of the four is allowed, you'd need to upgrade to a 
    | AlertEmail | your email |
    | MonthlyBudgetUsd | e.g. `40` |
    | InstanceType | one marked *Free tier eligible* in step 2 (default `c7i-flex.large`) |
+   | EnableWaf | `false` (default). `true` adds a firewall (about 8 USD/month) and only works in `us-east-1` |
    | GitRef | `claude/exciting-faraday-lphld3` (leave the default; use `main` only after the branch is merged) |
    | Leave the rest as they are | |
 
@@ -99,7 +102,18 @@ CloudFormation finishes before the server does: the server now builds the app. O
 **Outputs** tab and click **HealthCheck**. Until it shows `{"status":"ready"}` you will see a
 CloudFront error page, which is normal while it builds.
 
-### 5. Generate the first debate
+### 5. Check the public site (optional, 1 minute)
+On your own computer (needs `curl`, `jq`, and `pip install websockets`):
+
+```bash
+deploy/aws/check_site.sh https://<the SiteUrl from the Outputs tab>
+```
+
+It checks HTTPS, the redirect from http, the API, the protected admin route and, the part I could
+not test myself, a **WebSocket through CloudFront**. Opening the site in a browser also proves it:
+the page loads its debate over that same WebSocket.
+
+### 6. Generate the first debate
 1. EC2 → **Instances** → select `counterpoint` → **Connect** → **Session Manager** → **Connect**.
    (If Session Manager is greyed out, wait a few minutes after boot and refresh.)
 2. In the terminal that opens, run:
@@ -122,10 +136,31 @@ From now on a new debate is generated every day at 07:00 UTC.
 | Generate another debate | `sudo FORCE=true /opt/counterpoint/app/deploy/aws/run-daily.sh` |
 | Update to the latest code | `sudo /opt/counterpoint/app/deploy/aws/update.sh` |
 | Change a key | Secrets Manager → open the secret → edit; then run the update command above |
+| Rotate the admin token | Secrets Manager → edit `ADMIN_TOKEN` → run the update command above. Also update the `ADMIN_TOKEN` secret in GitHub if you use the *Daily debate* workflow |
+| Run the health check by hand | `sudo bash -c '. /etc/counterpoint.env && /opt/counterpoint/app/deploy/aws/healthcheck.sh'` |
+
+## Monitoring, backups and the optional firewall
+
+- **Health alarm.** Every 5 minutes the server runs `healthcheck.sh` and publishes one CloudWatch
+  metric, `Counterpoint/Healthy` (1 = fine). The **HealthAlarm** emails `AlertEmail` when it is 0 for
+  15 minutes: the backend is not ready (backend or Redis down) or **no new debate has been created for
+  36 hours** (the daily job is failing). A second alarm, **ServerStatusAlarm**, fires on AWS's own
+  instance status checks. **Confirm the subscription**: AWS sends a "Confirm subscription" email to
+  `AlertEmail` right after the stack is created; alarms stay silent until you click it.
+- The alarms and metric cost well under 1 USD a month.
+- **Stopping the server to save credits** produces no data, which is *not* treated as an alarm.
+  Stopping and starting keeps the same public address (Elastic IP), so the site comes back by itself.
+- **Backups.** A daily 03:00 UTC snapshot of the server disk is kept for 3 days (Data Lifecycle
+  Manager). Debates expire after 30 days anyway, so this mostly protects the Redis data between
+  deployments. **Deleting the stack does not delete the snapshots**: remove them under
+  EC2 → Snapshots when you tear everything down (they cost a few cents a month).
+- **Firewall (optional).** `EnableWaf=true` puts an AWS WAF web ACL in front of CloudFront: 1000
+  requests per 5 minutes per IP, plus AWS's common attack rules. It needs `us-east-1`.
 
 ## Tear down
 CloudFormation → select the stack → **Delete**. This removes the server, the disk (**including the
-debate archive**), the public IP, CloudFront, the secret and the budget, so nothing keeps charging.
+debate archive**), the public IP, CloudFront, the secret, the alarms and the budget. The disk
+snapshots stay behind: delete them under EC2 → Snapshots.
 
 ## Troubleshooting
 
@@ -154,7 +189,8 @@ debate archive**), the public IP, CloudFront, the secret and the budget, so noth
 This stack has not been run on a real AWS account (I can't reach one). What *has* been checked:
 the template passes `cfn-lint`, the scripts pass `shellcheck`, and CI starts the same
 Docker Compose stack and tests routing, WebSockets and rate limiting through the Caddy router.
-What has not: CloudFormation actually creating it, CloudFront's WebSocket handling in front of the
-server, the exact instance sizes your account allows, and current prices. If the stack fails, the
+What has not: CloudFormation actually creating it (including the alarms, snapshot schedule and
+optional WAF added later), CloudFront's WebSocket handling in front of the server (`check_site.sh`
+tests exactly this once it exists), the exact instance sizes your account allows, and current prices. If the stack fails, the
 error text in CloudFormation's **Events** tab or the bootstrap log will say where, and I can fix it
 from that.

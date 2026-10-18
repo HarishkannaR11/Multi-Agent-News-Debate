@@ -1,0 +1,20 @@
+#!/bin/bash
+# Runs once, as root, when the server boots for the first time. Terraform fills in the placeholders.
+# Stop at the first error and print each command (-x) so the log shows what happened.
+set -euxo pipefail
+# Copy all output into a log file as well as the console.
+exec > >(tee -a /var/log/counterpoint-bootstrap.log) 2>&1
+# Never ask questions during installs.
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y git
+# Saved so `update.sh` and the 5-minute health check can read them later.
+printf 'export SECRET_ID=%s\nexport AWS_REGION=%s\n' '${secret_id}' '${region}' > /etc/counterpoint.env
+# Create the install folder.
+mkdir -p /opt/counterpoint
+# Download only the latest commit of the chosen branch.
+git clone --depth 1 --branch '${git_ref}' '${repo_url}' /opt/counterpoint/app
+# Load the two variables just saved.
+. /etc/counterpoint.env
+# Run the bootstrap script, which installs Docker, writes the settings and starts everything.
+/opt/counterpoint/app/deploy/aws/bootstrap.sh

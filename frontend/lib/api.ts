@@ -20,6 +20,10 @@ export type Debate = {
   bias_scores: Record<string, number>;
   // Current stage, e.g. "done".
   status: string;
+  // The moderator's question for the optional second round (empty when there was no extra round).
+  focus?: string;
+  // Each analyst's closing statement from that round, keyed by analyst name.
+  crossfire?: Record<string, string>;
 };
 
 /** What GET /api/debates returns: enough for a list, without the full transcript. */
@@ -186,6 +190,9 @@ export type DebateStreamEvent = {
   rebuttals?: Record<string, string>;
   verdict?: string;
   bias_scores?: Record<string, number>;
+  // The optional second round: the moderator's question and the analysts' answers.
+  focus?: string;
+  crossfire?: Record<string, string>;
 };
 
 // The states the WebSocket connection can be in (used to show messages to the user).

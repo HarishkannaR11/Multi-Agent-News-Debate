@@ -8,6 +8,7 @@ from .nodes.extractor import topic_extractor_node  # the step that turns the art
 from .nodes.fetcher import fetch_news_node  # the step that downloads and filters the news
 from .nodes.moderator import moderator_node  # the step that writes the verdict and bias scores
 from .nodes.rebuttal import rebuttal_node  # the step where analysts rebut each other
+from .nodes.second_round import crossfire_node, review_node  # the moderator's optional "one more round"
 from .state import DebateState  # the shared state shape
 
 
@@ -33,6 +34,12 @@ def new_debate_state(seen_urls: list[str] | None = None) -> DebateState:
         "rebuttals": {},
         # No rebuttal retries used yet.
         "rebuttal_retries": 0,
+        # No second round decided yet.
+        "second_round": False,
+        # No moderator question yet.
+        "focus": "",
+        # No closing statements yet.
+        "crossfire": {},
         # Article has not been checked yet.
         "guardrail_input_pass": False,
         # Rebuttal step has not finished yet.
@@ -62,8 +69,15 @@ def run_config(date: str = "") -> dict:
 
 # Decides which step comes after the rebuttal step.
 def route_after_rebuttal(state: DebateState) -> str:
-    # If the rebuttal step says it is finished, go on to the moderator; otherwise loop back to rebuttal.
-    return "moderator" if state["guardrail_output_pass"] else "rebuttal"
+    # If the rebuttal step says it is finished, go on to the moderator's review; otherwise loop back to rebuttal.
+    return "review" if state["guardrail_output_pass"] else "rebuttal"
+
+
+# Decides which step comes after the moderator's review.
+def route_after_review(state: DebateState) -> str:
+    # The review asked for one more round: run it. Otherwise go straight to the verdict.
+    # There is no edge from "crossfire" back to "review", so the extra round can happen at most once.
+    return "crossfire" if state.get("second_round") else "moderator"
 
 
 # Builds and compiles the whole debate workflow.
@@ -78,6 +92,9 @@ def _build():
     for persona in (*PARALLEL_PERSONAS, "devil"):
         g.add_node(persona, make_debate_node(persona))
     g.add_node("rebuttal",  rebuttal_node)
+    # The moderator decides whether one more round is needed, and the analysts answer if so.
+    g.add_node("review",    review_node)
+    g.add_node("crossfire", crossfire_node)
     g.add_node("moderator", moderator_node)
 
     # The graph starts at the fetch step.
@@ -95,9 +112,14 @@ def _build():
     g.add_edge("devil", "rebuttal")
 
     # Guardrail failures retry only the failing rebuttals; the node itself caps the retries.
-    # After rebuttals, a function decides: go to the moderator, or run the rebuttal step again.
+    # After rebuttals, a function decides: go to the moderator's review, or run the rebuttal step again.
     g.add_conditional_edges("rebuttal", route_after_rebuttal,
-                            {"moderator": "moderator", "rebuttal": "rebuttal"})
+                            {"review": "review", "rebuttal": "rebuttal"})
+    # After the review, either the extra round runs or the moderator writes the verdict.
+    g.add_conditional_edges("review", route_after_review,
+                            {"crossfire": "crossfire", "moderator": "moderator"})
+    # The extra round always leads to the verdict (and never back to the review).
+    g.add_edge("crossfire", "moderator")
     # The moderator is the last step; the run ends there.
     g.set_finish_point("moderator")
 
