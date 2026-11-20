@@ -132,6 +132,24 @@ class Settings:
     # Feedback submissions per client per hour.
     FEEDBACK_RATE_LIMIT_PER_HOUR = int(os.environ.get("FEEDBACK_RATE_LIMIT_PER_HOUR", 20))
 
+    # --- the daily market debate (NIFTY, SENSEX and forex, with a macro skeptic) ---
+    # Master switch for the Markets feature (data fetching, the daily job and the pages).
+    MARKETS_ENABLED = _bool("MARKETS_ENABLED", True)
+    # Data providers to try, in order, for each series: yahoo (no key), fred (needs FRED_API_KEY), nse (flows only).
+    MARKETS_PROVIDERS = [
+        p.strip() for p in os.environ.get("MARKETS_PROVIDERS", "yahoo,fred,nse").split(",") if p.strip()
+    ]
+    # Free FRED API key (https://fred.stlouisfed.org/docs/api/api_key.html); optional.
+    FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
+    # Optional CSV (date,fii_net_cr) to back-fill foreign-flow history, and an optional recorded-series JSON for demos.
+    MARKETS_FLOWS_CSV = os.environ.get("MARKETS_FLOWS_CSV", "")
+    MARKETS_FIXTURE_FILE = os.environ.get("MARKETS_FIXTURE_FILE", "")
+    # When the daily market debate runs (India time, after the 15:30 close and the evening data updates).
+    MARKETS_SCHEDULE_HOUR = int(os.environ.get("MARKETS_SCHEDULE_HOUR", 18))
+    MARKETS_SCHEDULE_MINUTE = int(os.environ.get("MARKETS_SCHEDULE_MINUTE", 30))
+    # Times an agent may be asked again after the validator rejects an answer (so attempts = this + 0 first tries).
+    MARKETS_MAX_ATTEMPTS = int(os.environ.get("MARKETS_MAX_ATTEMPTS", 3))
+
     # Websites allowed to call this API from a browser: split the comma-separated value, trim each, drop blanks.
     CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
 
