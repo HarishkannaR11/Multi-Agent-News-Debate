@@ -3,4 +3,4 @@
 # Bounded rather than pinned: pin an exact version here once a build succeeds.
 --index-url https://download.pytorch.org/whl/cpu
 --extra-index-url https://pypi.org/simple
-torch>=2.5,<3
+torch>=2.14.1+cpu,<3
