@@ -664,3 +664,21 @@ persisted the moment it finishes, so a refresh shows partial results. Reads
 reconcile stalled jobs (no job lock) so state is never stuck on `generating`.
 The daily LangGraph pipeline is unchanged; its plain-text debates render in the
 same UI without claims or sources.
+
+
+## Market debate (added)
+
+`markets/` is a second, independent pipeline that shares only Redis, the LLM wrapper and the content filter with the
+news debate. Flow: `providers.collect` (never raises) -> `build.build_packet` (anchor = NIFTY's last trading day on or
+before the requested date; series aligned, staleness checked) -> `signals.compute_signals` (pure functions: facts,
+attribution, regime) -> packet stored with its SHA-256 -> `pipeline._run_day` (Bull and Bear concurrently, then the
+Skeptic with their accepted positions, then the moderator) -> every answer passes `validator` before it is stored.
+
+The retry edge lives in `pipeline.ask_with_validation`: parse, validate against the packet, screen, and on rejection
+re-ask with the rejection reasons appended; each attempt is appended to the agent's audit list. Retry is bounded
+(`MARKETS_MAX_ATTEMPTS`), so a model that cannot comply fails that analyst only; the day becomes `partial` and the verdict
+uses the validated analysts. Resuming reuses the stored packet, so a reproducible verdict never depends on a re-fetch.
+
+Attribution lags the US-session factors (dollar index, Brent, US 10-year) by one trading day because India closes before
+the US session; USD/INR is same-day. The fit is a ridge regression over the trailing 60 days, and confidence is never
+reported above "moderate". Redis keys: `market:{date}` (hash), `market:index` (sorted set), `market:flows` (hash).

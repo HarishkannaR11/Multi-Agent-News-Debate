@@ -232,6 +232,9 @@ later restarts take ~30s. Expect this to need a couple of GB of free RAM.
 | `POST /api/debates/{id}/followup` | Ask a question answered only from this debate's claims, sources and verdict |
 | `POST /api/debates/{id}/feedback` | Clarity / usefulness ratings (1-5) and an optional comment |
 | `GET /api/archive?q&category&sort&offset&limit&ids` | Server-side search, category filter, sort and paging; `ids` restricts to a visitor's own or saved debates |
+| `GET /api/markets?limit&offset` | The daily market days, newest first, as small summaries |
+| `GET /api/markets/{date}` | One market day in full (`latest` = newest): frozen packet, three analysts with their audit trail, verdict |
+| `POST /internal/run-markets` | Build today's market packet and run the market debate. Requires `X-Admin-Token`; `?date=` and `?force=true` optional |
 | `WS /ws/debate/{id}` | Replays a stored debate as `debating` → `rebuttal` → `done` events; closes with code 4404 if not found |
 | `POST /internal/run-daily` | Generate today's debate. Requires `X-Admin-Token`; idempotent (`?force=true` overrides) |
 | `GET /health`, `GET /health/ready` | Liveness / Redis readiness |
@@ -264,18 +267,45 @@ while `status` is `generating` (`stage`: sources → perspectives → synthesis)
   about 7 LLM calls. If a worker dies, the next read marks unfinished analysts
   failed so the page never spins forever; use Retry.
 
+### The daily market debate
+
+A second mode, **Markets** (`/markets`), debates one trading day of the Indian market: NIFTY 50, SENSEX and USD/INR,
+with the global drivers (dollar index, Brent, US 10-year yield, India VIX) and FII/FPI flows. It runs on
+India time after the close (`MARKETS_SCHEDULE_HOUR/MINUTE`) or on demand with `POST /internal/run-markets`.
+
+1. **Fetch** each series through pluggable providers (`markets/providers.py`): Yahoo (no key, unofficial), FRED (free
+   key) and NSE flows. A source that fails leaves a labelled gap, never an invented number.
+2. **Signals, no AI** (`markets/signals.py`): numbered facts (M1, M2, ...), a regression-based split of the NIFTY move
+   into "imported" (USD/INR, and the previous US session's dollar index, Brent and US yields) and "unexplained", and a
+   rule-based regime label. Confidence is capped at "moderate": it is association, not proof of cause.
+3. **Freeze** the packet with a SHA-256 fingerprint. A finished day is never regenerated; an unfinished one resumes
+   from its stored packet; `force=true` starts over.
+4. **Debate**: Bull and Bear in parallel, then the Macro Skeptic (whose only job is domestic-vs-imported), then a
+   moderator.
+5. **Validator with a retry edge** (`markets/validator.py`): every claim must cite existing fact ids, every figure it
+   quotes must appear in a cited fact, unconditional price predictions are rejected, and the skeptic must cite the
+   attribution fact and may not flatly contradict it. A rejected answer goes back to the agent with the exact reasons
+   (up to `MARKETS_MAX_ATTEMPTS`); every attempt is stored and shown in the page's audit trail.
+
+Costs about 5 LLM calls a day, up to about 15 if the validator keeps rejecting answers. Not investment advice.
+Live data providers need outbound internet and were not exercised from the development sandbox: tests use a clearly
+labelled synthetic fixture (`backend/markets/fixtures/sample_synthetic.json`, not real prices).
+
 ## Project layout
 
 ```
 backend/
   graph/          LangGraph state, nodes (fetcher, extractor, agents,
                   rebuttal, moderator, opinion), and guardrails
+  userdebate/     Visitor-question debates (structured analysts, claims, sources)
+  markets/        The daily market debate: packet, providers, signals, validator, pipeline, store
   routers/        REST + WebSocket endpoints
   services/       Redis and LangSmith helpers
   config.py       Env vars and the Groq client wrapper
 frontend/
-  app/            Home (latest daily debate), /new, /debate/[id], /archive
+  app/            Home (latest daily debate), /new, /debate/[id], /archive, /markets, /markets/[date]
   components/     DebateComposer, OpinionBox, BiasChart, Header, ThemeToggle
+  components/markets/  MarketView, SeriesTable, AttributionPanel, AgentsSection, VerdictCard, FactsSection
   components/debate/  DebateView (page container + polling), PerspectiveExplorer,
                   ClaimList, DisagreementMap, VerdictSection, SourcesSection,
                   FollowUp, FeedbackForm, DebateActions, GenerationStatus
