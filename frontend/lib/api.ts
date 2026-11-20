@@ -132,7 +132,7 @@ async function errorMessage(res: Response, fallback: string): Promise<string> {
 }
 
 // Shared helper that sends a request to the backend and returns its JSON (T = the expected result type).
-async function request<T>(path: string, init: RequestInit | undefined, fallback: string): Promise<T> {
+export async function request<T>(path: string, init: RequestInit | undefined, fallback: string): Promise<T> {
   // Will hold the server's response.
   let res: Response;
   try {

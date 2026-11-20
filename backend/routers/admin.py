@@ -1,8 +1,10 @@
 import hmac  # tools for secure comparison of secrets
+import re  # checks the optional date
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Response  # FastAPI building blocks
 
 from ..config import settings  # the shared app settings
+from ..markets.pipeline import run_market_day  # the daily market debate
 from ..scheduler import generate_debate  # the function that runs the debate workflow and saves it
 from ..services.redis_service import acquire_daily_lock  # claims today's run (only one caller wins)
 from ..timeutil import today_iso  # today's date as text
@@ -46,3 +48,26 @@ async def run_daily(
     background.add_task(generate_debate, date)
     # Reply immediately: the caller does not wait for the 13 LLM calls.
     return {"status": "accepted", "date": date}
+
+
+# POST /internal/run-markets : build today's market packet and run the market debate. Same admin token as run-daily.
+@router.post("/run-markets", status_code=202)
+async def run_markets(
+    background: BackgroundTasks,
+    # ?force=true rebuilds a day that is already stored (a new packet, all agents again).
+    force: bool = False,
+    # ?date=YYYY-MM-DD runs for a past date (the anchor index's last trading day on or before it).
+    date: str = "",
+    x_admin_token: str = Header(default=""),
+):
+    if not settings.ADMIN_TOKEN:
+        raise HTTPException(status_code=503, detail="Admin endpoint disabled (ADMIN_TOKEN not set)")
+    if not hmac.compare_digest(x_admin_token.encode(), settings.ADMIN_TOKEN.encode()):
+        raise HTTPException(status_code=401, detail="Invalid admin token")
+    if not settings.MARKETS_ENABLED:
+        raise HTTPException(status_code=503, detail="The Markets feature is switched off")
+    day = date or today_iso()
+    if date and not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+        raise HTTPException(status_code=422, detail="date must look like 2026-11-19")
+    background.add_task(run_market_day, day, force)
+    return {"status": "accepted", "requested_date": day}

@@ -43,7 +43,7 @@ catalogue==2.0.10
     #   spacy
     #   srsly
     #   thinc
-certifi==2026.7.22
+certifi==2026.10.23
     # via
     #   httpcore
     #   httpx
@@ -257,7 +257,7 @@ murmurhash==1.0.15
     #   thinc
 networkx==3.6.1
     # via torch
-nltk==3.10.3
+nltk==3.10.4
     # via
     #   guardrails-ai-detect-pii
     #   guardrails-ai-toxic-language
@@ -325,7 +325,7 @@ packaging==26.3
     #   weasel
 phonenumbers==9.0.40
     # via presidio-analyzer
-pip==26.2.1
+pip==26.3
     # via guardrails-ai
 preshed==3.0.13
     # via

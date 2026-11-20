@@ -4,7 +4,7 @@ import { ThemeToggle } from "./ThemeToggle";
 
 // The site header: compact and sticky, with the four main actions always in reach.
 // "current" marks the page the visitor is on, for the visual highlight and for screen readers.
-export function Header({ current }: { current?: "latest" | "archive" | "new" }) {
+export function Header({ current }: { current?: "latest" | "archive" | "new" | "markets" }) {
   // Shared look of the plain text links.
   const link = (active: boolean) =>
     `rounded px-2 py-1.5 font-sans text-sm hover:bg-surface hover:text-ink ${active ? "text-ink underline underline-offset-4" : "text-warm"}`;
@@ -24,6 +24,9 @@ export function Header({ current }: { current?: "latest" | "archive" | "new" }) 
           </Link>
           <Link href="/archive" className={link(current === "archive")} aria-current={current === "archive" ? "page" : undefined}>
             Archive
+          </Link>
+          <Link href="/markets" className={link(current === "markets")} aria-current={current === "markets" ? "page" : undefined}>
+            Markets
           </Link>
           {/* Opens the archive with the search box focused. */}
           <Link href="/archive#search" className={link(false)}>

@@ -1,6 +1,8 @@
 import asyncio  # Python's async toolkit (we use it to sleep without blocking)
 import logging  # Python's built-in logging system
 import re  # regular expressions (pattern matching on text)
+from datetime import datetime  # the current time in India
+from zoneinfo import ZoneInfo  # time zones
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # runs jobs on a schedule (like cron)
 
@@ -14,6 +16,9 @@ from .services.redis_service import (  # all the Redis functions the job needs
     save_debate,  # store the finished debate
 )
 from .timeutil import today_iso  # today's date as text
+
+# The market debate runs on India time, after the 15:30 close.
+MARKETS_TIMEZONE = "Asia/Kolkata"
 
 # A logger named after this module.
 logger = logging.getLogger(__name__)
@@ -82,6 +87,13 @@ async def run_daily_debate() -> str | None:
     return await generate_debate(date)
 
 
+# The job the scheduler runs each evening for the market debate (idempotent: a finished day is left alone).
+async def run_daily_markets() -> str | None:
+    from .markets.pipeline import run_market_day  # imported here so the news job never depends on it
+
+    return await run_market_day(datetime.now(ZoneInfo(MARKETS_TIMEZONE)).date().isoformat())
+
+
 # Starts the daily scheduler (called at app start-up).
 def start_scheduler() -> None:
     # Do nothing if the scheduler is switched off in settings.
@@ -107,6 +119,13 @@ def start_scheduler() -> None:
         # Still run if the app was down at the scheduled time but is back within an hour.
         misfire_grace_time=60 * 60,
     )
+    # The evening market debate (its own time zone, so the hour means India time whatever the server's zone is).
+    if settings.MARKETS_ENABLED:
+        _scheduler.add_job(
+            run_daily_markets, "cron", hour=settings.MARKETS_SCHEDULE_HOUR, minute=settings.MARKETS_SCHEDULE_MINUTE,
+            timezone=MARKETS_TIMEZONE, id="daily_market_debate", replace_existing=True, coalesce=True,
+            misfire_grace_time=60 * 60,
+        )
     # Start the scheduler.
     _scheduler.start()
 
