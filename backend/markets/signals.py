@@ -12,7 +12,8 @@ from .packet import ANCHOR, MAX_STALE_DAYS, SERIES
 
 # The imported factors the attribution model uses, and how many series observations each is lagged. India closes
 # before the US session, so a dollar-index, crude or US-yield move on day D shows up in Indian prices on day D+1.
-ATTRIBUTION_FACTORS = {"USDINR": 0, "DXY": 1, "BRENT": 1, "US10Y": 1}
+# Gold (a safe-haven and import-bill signal for India) and copper (a global-growth signal) join crude and the dollar.
+ATTRIBUTION_FACTORS = {"USDINR": 0, "DXY": 1, "BRENT": 1, "US10Y": 1, "GOLD": 1, "COPPER": 1}
 # Trailing trading days used to fit the attribution model, and the least that makes a fit meaningful.
 TRAIN_DAYS = 60
 MIN_TRAIN_ROWS = 30
@@ -219,19 +220,29 @@ def regime(series: dict[str, list[tuple[str, float]]], as_of: str, attr: dict) -
         c = changes(points, pct=pct, scale=scale)
         return _factor_change(c, sorted(c), as_of, lag)
 
-    def vote(value: float | None, threshold: float, name: str) -> None:
+    # A big enough rise votes risk-off under `up`, a big enough fall votes risk-on under `down` (each named for what
+    # actually happened, so a falling dollar is never reported as a stronger one).
+    def vote(value: float | None, threshold: float, up: str, down: str) -> None:
         if value is None:
             return
         if value >= threshold:
-            off.append(name)
+            off.append(up)
         elif value <= -threshold:
-            on.append(name)
+            on.append(down)
 
-    vote(lagged("DXY", True, 1.0, 1), 0.3, "stronger dollar")
-    vote(lagged("US10Y", False, 100.0, 1), 5.0, "higher US yields")
-    vote(lagged("USDINR", True, 1.0, 0), 0.3, "weaker rupee")
-    vote(lagged("BRENT", True, 1.0, 1), 2.0, "higher crude")
-    vote(lagged("INDIAVIX", True, 1.0, 0), 5.0, "higher India VIX")
+    vote(lagged("DXY", True, 1.0, 1), 0.3, "stronger dollar", "weaker dollar")
+    vote(lagged("US10Y", False, 100.0, 1), 5.0, "higher US yields", "lower US yields")
+    vote(lagged("USDINR", True, 1.0, 0), 0.3, "weaker rupee", "stronger rupee")
+    vote(lagged("BRENT", True, 1.0, 1), 2.0, "higher crude", "lower crude")
+    vote(lagged("INDIAVIX", True, 1.0, 0), 5.0, "higher India VIX", "lower India VIX")
+    vote(lagged("GOLD", True, 1.0, 1), 1.0, "higher gold", "lower gold")
+    # Copper is a growth signal, so its direction reads the other way: falling copper is the risk-off sign.
+    copper = lagged("COPPER", True, 1.0, 1)
+    if copper is not None:
+        if copper >= 1.5:
+            on.append("higher copper")
+        elif copper <= -1.5:
+            off.append("lower copper")
     flows = series.get("FII_NET", [])
     if usable_index(flows, as_of) is not None:
         recent = [v for d, v in flows if d <= as_of][-5:]
@@ -345,7 +356,7 @@ def compute_signals(series: dict[str, list[tuple[str, float]]], as_of: str) -> d
             f"(SENSEX {_signed(sensex_chg[as_of])}%, {SERIES[ANCHOR]['label']} {_signed(anchor_chg[as_of])}%).",
             [abs(gap), abs(sensex_chg[as_of]), abs(anchor_chg[as_of])], as_of,
         )
-    for name in ("USDINR", "INDIAVIX", "DXY", "BRENT", "US10Y"):
+    for name in ("USDINR", "INDIAVIX", "DXY", "BRENT", "WTI", "GOLD", "SILVER", "COPPER", "NATGAS", "US10Y"):
         level_fact(name)
 
     # Foreign flows.

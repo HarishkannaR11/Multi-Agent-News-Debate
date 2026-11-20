@@ -6,6 +6,11 @@ export const SERIES_LABELS: Record<string, string> = {
   INDIAVIX: "India VIX",
   DXY: "US dollar index",
   BRENT: "Brent crude",
+  WTI: "WTI crude",
+  GOLD: "Gold",
+  SILVER: "Silver",
+  COPPER: "Copper",
+  NATGAS: "Natural gas",
   US10Y: "US 10-year yield",
   FII_NET: "FII/FPI net flow",
 };

@@ -679,6 +679,6 @@ re-ask with the rejection reasons appended; each attempt is appended to the agen
 (`MARKETS_MAX_ATTEMPTS`), so a model that cannot comply fails that analyst only; the day becomes `partial` and the verdict
 uses the validated analysts. Resuming reuses the stored packet, so a reproducible verdict never depends on a re-fetch.
 
-Attribution lags the US-session factors (dollar index, Brent, US 10-year) by one trading day because India closes before
+Attribution lags the US-session factors (dollar index, Brent, gold, copper, US 10-year) by one trading day because India closes before
 the US session; USD/INR is same-day. The fit is a ridge regression over the trailing 60 days, and confidence is never
 reported above "moderate". Redis keys: `market:{date}` (hash), `market:index` (sorted set), `market:flows` (hash).

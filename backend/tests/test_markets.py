@@ -98,6 +98,51 @@ def test_regime_is_global_risk_off_on_the_designed_day(signals):
     assert regime({}, AS_OF, {"status": "insufficient"})["label"] == "mixed"
 
 
+def three_days(first, second, third=None):
+    """Three closes ending on the as-of date, so the previous-session (lag 1) change is the second over the first."""
+    return [("2026-11-17", first), ("2026-11-18", second), ("2026-11-19", third if third is not None else second)]
+
+
+def test_commodities_are_facts_and_attribution_factors(signals):
+    by_series = {f["series"]: f["text"] for f in signals["facts"]}
+    assert "Gold closed at" in by_series["GOLD"] and "Brent crude closed at" in by_series["BRENT"]
+    for name in ("WTI", "SILVER", "COPPER", "NATGAS"):
+        assert name in by_series and "closed at" in by_series[name]
+    used = {f["series"] for f in signals["attribution"]["factors"]}
+    assert {"USDINR", "DXY", "BRENT", "US10Y", "GOLD", "COPPER"} == used
+
+
+def test_attribution_still_works_without_commodity_data():
+    series = {k: v for k, v in load_series().items() if k not in ("GOLD", "COPPER", "WTI", "SILVER", "NATGAS")}
+    result = compute_signals(series, AS_OF)
+    assert result["attribution"]["status"] == "ok"
+    assert {f["series"] for f in result["attribution"]["factors"]} == {"USDINR", "DXY", "BRENT", "US10Y"}
+    assert {m["series"] for m in result["missing"]} == {"WTI", "GOLD", "SILVER", "COPPER", "NATGAS"}
+
+
+def test_regime_reads_gold_and_copper_and_names_signals_by_what_happened():
+    flat = {"NIFTY50": three_days(100, 100)}
+    safe_haven = regime({**flat, "GOLD": three_days(100, 102), "COPPER": three_days(100, 98)}, AS_OF, {})
+    assert safe_haven["risk_off_signals"] == ["higher gold", "lower copper"] and safe_haven["risk_on_signals"] == []
+    growth = regime({**flat, "GOLD": three_days(100, 98), "COPPER": three_days(100, 102)}, AS_OF, {})
+    assert growth["risk_on_signals"] == ["lower gold", "higher copper"] and growth["risk_off_signals"] == []
+    quiet = regime({**flat, "GOLD": three_days(100, 100.5), "COPPER": three_days(100, 100.5)}, AS_OF, {})
+    assert quiet["risk_off_signals"] == quiet["risk_on_signals"] == []
+    # A falling dollar is a risk-on sign and must not be reported as "stronger dollar".
+    weaker = regime({**flat, "DXY": three_days(100, 99)}, AS_OF, {})
+    assert weaker["risk_on_signals"] == ["weaker dollar"] and weaker["risk_off_signals"] == []
+
+
+def test_regime_needs_three_agreeing_signals_to_call_a_global_move():
+    series = {
+        "DXY": three_days(100, 101), "GOLD": three_days(100, 102), "COPPER": three_days(100, 97),
+        "BRENT": three_days(100, 100), "US10Y": three_days(4.0, 4.0),
+    }
+    assert regime(series, AS_OF, {})["label"] == "global_risk_off"
+    two = {k: v for k, v in series.items() if k != "COPPER"}
+    assert regime(two, AS_OF, {})["label"] == "mixed"
+
+
 def test_stale_and_missing_series_are_reported_not_invented():
     series = load_series()
     series["DXY"] = [p for p in series["DXY"] if p[0] <= "2026-11-05"]
@@ -126,7 +171,10 @@ def test_packet_hash_is_stable_and_sensitive():
 def test_packet_uses_the_last_trading_day_and_labels_every_series():
     packet, _ = build_packet("2026-11-22", fetched_from_fixture())  # a Sunday
     assert packet["requested_date"] == "2026-11-22" and packet["as_of"] == AS_OF
-    assert set(packet["series"]) >= {"NIFTY50", "SENSEX", "USDINR", "DXY", "BRENT", "US10Y", "FII_NET", "INDIAVIX"}
+    assert set(packet["series"]) >= {
+        "NIFTY50", "SENSEX", "USDINR", "DXY", "BRENT", "US10Y", "FII_NET", "INDIAVIX", "WTI", "GOLD", "SILVER",
+        "COPPER", "NATGAS",
+    }
     assert all(s["status"] == "ok" for s in packet["series"].values())
 
 
@@ -171,6 +219,19 @@ def test_yahoo_parses_closes_and_uses_the_exchange_offset(monkeypatch):
     assert result is not None and result.source == "yahoo"
     assert result.points == [("2026-11-18", 24500.5), ("2026-11-19", 24400.25)]
     assert YahooProvider().fetch("FII_NET", AS_OF) is None
+
+
+def test_commodity_symbols_map_to_the_right_yahoo_contracts(monkeypatch):
+    asked = []
+
+    def record(url, **kwargs):
+        asked.append(url)
+        raise httpx.ConnectError("not needed")
+
+    monkeypatch.setattr(httpx, "get", record)
+    for series_id in ("GOLD", "SILVER", "COPPER", "WTI", "NATGAS", "BRENT"):
+        YahooProvider().fetch(series_id, AS_OF)
+    assert [u.rsplit("/", 1)[1] for u in asked] == ["GC=F", "SI=F", "HG=F", "CL=F", "NG=F", "BZ=F"]
 
 
 def test_providers_never_raise(monkeypatch):

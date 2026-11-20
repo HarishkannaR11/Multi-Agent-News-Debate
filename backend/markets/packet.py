@@ -34,6 +34,17 @@ SERIES: dict[str, dict] = {
         "label": "Brent crude", "unit": "USD per barrel", "kind": "commodity", "session": "us", "yahoo": "BZ=F",
         "fred": "DCOILBRENTEU",
     },
+    "WTI": {
+        "label": "WTI crude", "unit": "USD per barrel", "kind": "commodity", "session": "us", "yahoo": "CL=F",
+        "fred": "DCOILWTICO",
+    },
+    "GOLD": {"label": "Gold", "unit": "USD per ounce", "kind": "commodity", "session": "us", "yahoo": "GC=F"},
+    "SILVER": {"label": "Silver", "unit": "USD per ounce", "kind": "commodity", "session": "us", "yahoo": "SI=F"},
+    "COPPER": {"label": "Copper", "unit": "USD per pound", "kind": "commodity", "session": "us", "yahoo": "HG=F"},
+    "NATGAS": {
+        "label": "Natural gas (Henry Hub)", "unit": "USD per MMBtu", "kind": "commodity", "session": "us",
+        "yahoo": "NG=F", "fred": "DHHNGSP",
+    },
     "US10Y": {
         "label": "US 10-year yield", "unit": "percent", "kind": "yield", "session": "us", "yahoo": "^TNX",
         "fred": "DGS10",

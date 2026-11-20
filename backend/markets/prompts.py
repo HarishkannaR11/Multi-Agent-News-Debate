@@ -13,8 +13,8 @@ ROLES = {
     ),
     "skeptic": (
         "the macro skeptic. Your only job is attribution: decide whether the day's move in the Indian index was "
-        "domestic (company or India-specific news and flows) or imported (the dollar, USD/INR, crude and US yields "
-        "dragging the market). You also challenge any bull or bear claim that confuses the two."
+        "domestic (company or India-specific news and flows) or imported (the dollar, USD/INR, crude, gold, copper "
+        "and US yields dragging the market). You also challenge any bull or bear claim that confuses the two."
     ),
 }
 

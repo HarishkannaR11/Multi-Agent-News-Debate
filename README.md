@@ -270,14 +270,15 @@ while `status` is `generating` (`stage`: sources → perspectives → synthesis)
 ### The daily market debate
 
 A second mode, **Markets** (`/markets`), debates one trading day of the Indian market: NIFTY 50, SENSEX and USD/INR,
-with the global drivers (dollar index, Brent, US 10-year yield, India VIX) and FII/FPI flows. It runs on
+with the global drivers (dollar index, US 10-year yield, India VIX), the commodities that move Indian markets (Brent and
+WTI crude, gold, silver, copper, natural gas) and FII/FPI flows. It runs on
 India time after the close (`MARKETS_SCHEDULE_HOUR/MINUTE`) or on demand with `POST /internal/run-markets`.
 
 1. **Fetch** each series through pluggable providers (`markets/providers.py`): Yahoo (no key, unofficial), FRED (free
    key) and NSE flows. A source that fails leaves a labelled gap, never an invented number.
 2. **Signals, no AI** (`markets/signals.py`): numbered facts (M1, M2, ...), a regression-based split of the NIFTY move
-   into "imported" (USD/INR, and the previous US session's dollar index, Brent and US yields) and "unexplained", and a
-   rule-based regime label. Confidence is capped at "moderate": it is association, not proof of cause.
+   into "imported" (USD/INR, and the previous US session's dollar index, Brent, gold, copper and US yields) and
+   "unexplained", and a rule-based regime label (gold up and copper down lean risk-off; the reverse leans risk-on). Confidence is capped at "moderate": it is association, not proof of cause.
 3. **Freeze** the packet with a SHA-256 fingerprint. A finished day is never regenerated; an unfinished one resumes
    from its stored packet; `force=true` starts over.
 4. **Debate**: Bull and Bear in parallel, then the Macro Skeptic (whose only job is domestic-vs-imported), then a
@@ -286,6 +287,11 @@ India time after the close (`MARKETS_SCHEDULE_HOUR/MINUTE`) or on demand with `P
    quotes must appear in a cited fact, unconditional price predictions are rejected, and the skeptic must cite the
    attribution fact and may not flatly contradict it. A rejected answer goes back to the agent with the exact reasons
    (up to `MARKETS_MAX_ATTEMPTS`); every attempt is stored and shown in the page's audit trail.
+
+Commodity prices come from front-month futures (`BZ=F`, `CL=F`, `GC=F`, `SI=F`, `HG=F`, `NG=F`), which roll to the next
+contract periodically; a roll can show up as a one-day jump that is not a real price move, so treat a sudden large
+commodity change with suspicion. Gold is the dollar price, not the rupee price that Indian buyers see (that also
+depends on USD/INR and import duty).
 
 Costs about 5 LLM calls a day, up to about 15 if the validator keeps rejecting answers. Not investment advice.
 Live data providers need outbound internet and were not exercised from the development sandbox: tests use a clearly

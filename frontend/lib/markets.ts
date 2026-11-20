@@ -8,7 +8,7 @@ export const ROLE_LABELS: Record<MarketRole, string> = { bull: "Bull", bear: "Be
 export const ROLE_BLURBS: Record<MarketRole, string> = {
   bull: "Argues the constructive case from the data packet.",
   bear: "Argues the cautious case from the data packet.",
-  skeptic: "Asks one question: was the move domestic, or imported (dollar, rupee, crude, US yields)?",
+  skeptic: "Asks one question: was the move domestic, or imported (dollar, rupee, commodities, US yields)?",
 };
 
 export type MarketFact = { id: string; series: string; kind: string; text: string; numbers: number[]; as_of: string };
