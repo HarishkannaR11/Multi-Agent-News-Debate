@@ -28,7 +28,7 @@ jobs:
       # Download the repository code onto the machine.
       - uses: actions/checkout@v4
       # Install Python 3.11, and cache pip downloads keyed on the requirements files.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
