@@ -37,7 +37,7 @@ jobs:
       FORCE: ${{ inputs.force && 'true' || 'false' }}
     steps:
       # Download the repository (we need the script in it).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # If a secret is missing, print a friendly note instead of failing.
       - name: Not configured
         if: env.BACKEND_URL == '' || env.ADMIN_TOKEN == ''

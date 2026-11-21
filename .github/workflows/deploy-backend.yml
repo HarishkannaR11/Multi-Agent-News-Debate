@@ -36,7 +36,7 @@ jobs:
       HF_SPACE: ${{ secrets.HF_SPACE }}
     steps:
       # Download the repository.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # If a secret is missing, print a friendly note instead of failing.
       - name: Not configured
         if: env.HF_TOKEN == '' || env.HF_SPACE == ''
