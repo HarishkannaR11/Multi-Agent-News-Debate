@@ -97,7 +97,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Set up Docker Buildx, the modern image builder (supports caching).
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       # Build the backend image from the repo root and load it into the local Docker (do not push it anywhere).
       # The cache-from/cache-to lines reuse layers from earlier runs, stored in GitHub's cache.
       - uses: docker/build-push-action@v6
