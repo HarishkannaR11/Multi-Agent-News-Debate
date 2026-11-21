@@ -4,8 +4,10 @@ How to present this project in an interview: the pitch, the stack, the architect
 through the backend, the requests and responses, the code worth knowing, the bugs you fixed, and the
 questions interviewers tend to ask.
 
-> **Which code to show.** The finished project is on the `main` branch (merged in pull request #3),
-> including the guardrails, tests, CI and deployment work described here.
+> **Which code to show.** Everything is on the `main` branch. Sections 1 to 13 cover the original daily
+> debate (pull request #3). Sections 14 to 18 cover what came after: debates started from a visitor's own
+> question (pull request #19), the daily **Markets** debate with a validator and retry loop (pull request #24),
+> and the AWS deployment with Terraform and a custom domain. Read section 14 first if you only have ten minutes.
 
 ---
 
@@ -13,7 +15,18 @@ questions interviewers tend to ask.
 
 **30 seconds**
 
-> Counterpoint is a full-stack AI app. Every day it takes the top news story, and five AI analysts
+> Counterpoint is a multi-agent AI debate platform. It has three modes. Every day it takes the top
+> news story and five AI analysts with different worldviews debate it, and a moderator writes a
+> verdict. Visitors can also type their own question and get five structured perspectives with
+> labelled claims, a map of where they agree and disagree, and a verdict that says how strong the
+> evidence is. And every trading evening a Markets mode freezes a snapshot of NIFTY, SENSEX, the
+> rupee, commodities and global drivers, and three agents (bull, bear and a macro skeptic) debate
+> it under a code validator that rejects any figure that is not in the data. FastAPI, LangGraph,
+> Groq LLMs, Redis and Next.js, deployed on AWS with Terraform, CI and security scanning.
+
+*The older, daily-debate-only version of this pitch:*
+
+> Every day it takes the top news story, and five AI analysts
 > with different worldviews (progressive, conservative, economist, geopolitical, and a devil's
 > advocate) debate it. They write opening arguments and rebuttals, a moderator writes a balanced
 > verdict, and each analyst gets a bias score. Visitors can then submit their own opinion, and an
@@ -40,6 +53,17 @@ questions interviewers tend to ask.
   behavior.
 - Wrote 94 automated tests (76 backend, 18 frontend), CI with Docker smoke tests, and a one-server
   AWS deployment (Docker Compose, Caddy, CloudFront, CloudFormation).
+  *(Original numbers. The current totals are in section 17.)*
+- Built a grounded market-debate agent system: a deterministic signal layer (facts, a lagged-factor
+  regression that splits the NIFTY move into imported vs unexplained, a regime classifier) feeds three
+  agents whose claims a code validator checks against the data; rejected answers are retried with the
+  reasons, and every attempt is kept as an audit trail.
+- Let visitors debate their own questions: concurrent structured generation with bounded retries,
+  idempotent submission, partial results, per-analyst retry, claim labels that never overclaim
+  ("verified" is never assigned without a fact-check), and a claim-grounded disagreement map.
+- Deployed it on AWS with Terraform (EC2 + Docker Compose behind CloudFront, Secrets Manager, SSM, alarms,
+  snapshots, optional WAF) and a custom domain through Route 53; CI runs tests, lint, type checks,
+  Terraform validation and a Trivy vulnerability scan.
 
 ---
 
@@ -529,3 +553,192 @@ planned to verify at first deploy."
 6. Show the CI run and the compose stack: *"Tests, lint, type checks, and a container smoke test."*
 
 Practice saying the *why* for each step, not only the *what*.
+
+---
+
+# Part 2: what was added after the first version
+
+## 14. The two newer features
+
+### 14.1 Debates started from a visitor's own question
+
+**The problem you found.** The site could only show the daily debate: there was no endpoint and no form to
+debate anything else. Every other "feature" (archive, share) assumed one plain-text debate per day, with no
+idea of "in progress", "failed" or "partial".
+
+**How it works now** (`backend/userdebate/`, `routers/userdebates.py`):
+
+1. `POST /api/debates` normalises the question (Unicode NFC, whitespace collapsed, length 10–500, at least two
+   words, mostly letters and digits), then applies a kill switch, a per-IP limit (3 an hour) and a site-wide daily
+   cap (40), because each debate costs real LLM calls.
+2. **Idempotent submission.** The form sends a random `client_request_id`; a Redis `SET NX` claim maps it to one
+   debate, so a double click or a network retry returns the same debate instead of paying twice.
+3. The debate is **unlisted**: a random 10-hex suffix in its id, and it is never added to the public index.
+4. A background job: look up real related news (sources S1, S2 ...), then the four analysts **concurrently**, then
+   the devil's advocate (who reads the others), each answering in **validated JSON** with bounded retries and
+   exponential backoff. Each analyst is saved the moment it finishes, so a refresh shows partial results, and a
+   failed analyst can be retried alone.
+5. A moderator step builds a **disagreement map** that must cite real claim ids (an "agreement" or "conflict" needs
+   claims from two different analysts, so similar wording alone is not agreement), then a structured **verdict**.
+6. The page **polls** every 2 seconds while the status is `generating` and shows the real stage, never a made-up
+   percentage. Final status: `done`, `partial` or `failed`, never "done" while work remains.
+
+**Honesty rules enforced in code, not prompts:**
+- Claims are labelled `opinion`, `assumption`, `unverified` or `disputed`. **"Verified" is never assigned**,
+  because there is no fact-checking step.
+- An analyst may cite only real fetched articles; invented source ids are dropped.
+- The verdict's evidence sufficiency is capped by code: never "sufficient", and "insufficient" without sources.
+- If a worker dies, the next read sees no job-lock heartbeat and marks unfinished analysts failed, so the page
+  never spins forever.
+
+### 14.2 The daily Markets debate
+
+**The idea.** Treat the inputs as a **causal chain**, not separate data sources: global rates, crude and gold move
+the dollar; the dollar moves USD/INR; the rupee moves foreign (FII) flows; flows move NIFTY. Company news is the
+idiosyncratic layer on top. The interesting question is then **attribution** (was today's move domestic or
+imported?), which is evaluable, rather than prediction, which is not.
+
+**The pipeline** (`backend/markets/`):
+
+1. **Fetch** NIFTY 50, SENSEX, USD/INR, India VIX, the dollar index, US 10-year yield, Brent, WTI, gold, silver,
+   copper, natural gas and FII flows through pluggable providers (Yahoo, FRED, NSE). A failed source becomes a
+   labelled gap ("missing" or "stale"), never an invented number.
+2. **Deterministic signal layer (no AI).** Plain code turns the series into **numbered facts** (M1, M2 ...), an
+   **attribution** of the NIFTY move and a **regime** label.
+3. **Freeze** the packet with a **SHA-256 fingerprint**. Same data, same facts, same hash.
+4. **Agents:** Bull and Bear in parallel, then the **Macro Skeptic** (whose only job is domestic vs imported, and
+   who reads their accepted positions), then a moderator.
+5. **Validator with a retry edge** (`validator.py`, `pipeline.ask_with_validation`): every claim must cite existing
+   fact ids; every figure it quotes must appear in a cited fact (rounding tolerated); unconditional price
+   predictions are rejected; the skeptic must cite the attribution fact and may not flatly contradict it (it may
+   say "mixed" or "unclear" and explain). A rejected answer goes **back to the same agent with the exact reasons**,
+   up to 3 attempts. Every attempt is stored and shown on the page as an **audit trail**.
+6. A finished day is never regenerated; an unfinished one **resumes from its frozen packet** (never a newer fetch);
+   `force=true` starts over. Runs at 18:30 India time, or on an admin-only trigger.
+
+**The attribution maths, in one breath:** a ridge regression of NIFTY's daily % change on standardised factors over
+the trailing 60 trading days. USD/INR is same-day; the dollar index, Brent, gold, copper and the US 10-year yield are
+**lagged one day**, because India closes before the US session, so a US move on day D reaches Indian prices on day
+D+1. Today's "explained" move is the sum of beta times today's standardised factor; the "residual" is the rest.
+Labels: imported, domestic, mixed, or "no significant move" under 0.25%. Confidence is "low" or "moderate", **never
+high**, and the page says it is association, not proof of cause.
+
+**Why this design** (say these out loud):
+- *Numbers before words:* the model never computes or recalls a figure; code does, so a hallucinated figure is
+  mechanically detectable.
+- *Validator in code, not an LLM judge:* it is cheap, deterministic, testable and explains every rejection.
+- *Bounded retry:* a model that cannot comply fails that one agent; the day becomes "partial" and the verdict uses
+  only validated agents. No infinite loops (the lesson from bug 2 in section 9).
+- *Frozen packet:* reproducibility and auditability: you can re-run the agents on the identical evidence.
+
+---
+
+## 15. Deployment and operations
+
+```
+Route 53 (counterpoint.krisharish.space, a delegated sub-zone)
+   → CloudFront (HTTPS with an ACM certificate, no caching for the app, WebSockets pass through)
+      → EC2 with an Elastic IP: Caddy → Next.js frontend + FastAPI backend + Redis (Docker Compose, Redis on a volume)
+Secrets Manager (API keys, admin token) · SSM instead of SSH · CloudWatch alarms · daily EBS snapshots · budget alert
+```
+
+- **Infrastructure as code:** CloudFormation first, then **Terraform** with optional WAF and a custom domain. The
+  certificate has to be validated by DNS before CloudFront can use it, so the domain is attached in **two applies**
+  (`attach_domain = false`, then `true`), which keeps `apply` from hanging.
+- **DNS:** the main domain's nameservers point at one Route 53 zone; `counterpoint` is **delegated** with NS records
+  to its own zone, so the subdomain can be managed by Terraform without touching anything else on the domain.
+- **Deploys:** `deploy/aws/redeploy.sh` sends an SSM command; the server pulls `main`, refreshes secrets and runs
+  `docker compose up -d --build`. No SSH keys exist.
+- **CI (GitHub Actions):** backend (ruff, mypy, pytest), frontend (tsc, lint, vitest, production build), Terraform
+  (fmt, validate) and Docker (build, **Trivy** scan that fails on fixable CRITICAL vulnerabilities, a non-root check,
+  and a full compose smoke test through the proxy).
+
+---
+
+## 16. New stories (continue the table in section 9)
+
+| # | Problem | How it was found | Fix |
+|---|---|---|---|
+| 10 | **Visitors could not ask their own question at all**; the UI implied a feature that had no backend | Traced the submission path end to end | Built the creation API, validation, limits, idempotency and the New Debate page |
+| 11 | Older daily debates showed an **empty title**: the API sends `question: ""` and the code used `??`, which only catches null | A browser test against the real stack | Use `||` so an empty string falls back to the topic |
+| 12 | **Sideways scrolling on phones**: hidden screen-reader text inside a scrolling tab row escaped it, because absolutely positioned elements escape an `overflow` box that is not positioned | Automated overflow check at 390 px | Make the tab row `relative` |
+| 13 | **Regime signals were mislabelled**: a falling dollar was listed as "stronger dollar" under risk-on | Noticed while adding gold; wrote a test | Separate names for the rise and the fall of each signal |
+| 14 | CI suddenly failed on code nobody changed: **new CRITICAL advisories** (certifi, nltk, and pip's own vendored certifi) | The Trivy step | Bumped the three pins; checked pip's vendored version by inspecting the wheel |
+| 15 | **The site disappeared** a month after launch while AWS was healthy | DNS over HTTPS showed the answer came from `failed-whois-verification.namecheap.com` | The registrar had suspended the domain for an unverified contact email; verified it. *Lesson: check every layer: registrar, DNS, CDN, origin* |
+| 16 | Right after setup the domain failed only on some networks | `nslookup` against different resolvers | A resolver had cached an empty answer from the minutes before the records existed; it expires on its own |
+| 17 | A redeploy failed with a **container-name conflict** | The deploy output | A container left over from an interrupted restart; remove it and bring the stack up again |
+
+Story 15 is the strongest **operations** story: the symptom pointed at the app, the cause was the registrar.
+
+---
+
+## 17. Numbers to remember (current)
+
+| Fact | Value |
+|---|---|
+| Modes | 3: daily news debate, visitor debates, daily Markets debate |
+| LLM calls | daily debate 13; visitor debate about 7–8; Markets day about 5 (up to about 15 with validator retries) |
+| Visitor limits | 3 debates per IP per hour, 40 per day site-wide, 10–500 characters |
+| Retries | 3 attempts per analyst (backoff 1.5 s, doubling); Markets: 3 attempts per agent |
+| Markets series | 13 (NIFTY 50, SENSEX, USD/INR, India VIX, dollar index, US 10-year, Brent, WTI, gold, silver, copper, natural gas, FII flows) |
+| Attribution | ridge regression, 60 trading days, 6 factors, US-session factors lagged 1 day |
+| Schedules | news debate 07:00 UTC; Markets 18:30 India time |
+| Tests | 207 backend (49 for Markets) + about 40 frontend unit tests, plus browser acceptance runs |
+| Code | about 5,400 lines backend, 4,500 frontend, 2,400 tests (heavily commented) |
+
+---
+
+## 18. Questions on the newer work, with short answers
+
+**How do you stop the model from inventing numbers?** It never produces them. Code computes every figure into
+numbered facts; the validator extracts every figure from each claim and checks it against the facts that claim
+cites. An unsupported figure is rejected with the nearest real value, and the agent retries.
+
+**Why not use an LLM to judge the answers?** A code validator is deterministic, free, unit-testable and explains
+each rejection. An LLM judge is useful for qualities code cannot check (reasoning quality), so it would be a
+second layer, not a replacement.
+
+**What if the model never complies?** Retries are bounded (3). That agent is marked failed with its audit trail, the
+day is "partial", and the verdict says it used two of three analysts.
+
+**Why lag the US factors by a day?** Indian markets close before the US session, so a US move on day D can only
+affect Indian prices on D+1. Using same-day US data would leak future information into the model.
+
+**Why ridge and not plain least squares?** Only 60 observations and correlated factors (dollar, gold, yields);
+the penalty keeps the coefficients stable. It is a simple, explainable baseline, not a trading model.
+
+**Is the attribution causal?** No. It is statistical association; confidence is capped at "moderate" and the page
+says so. The skeptic's job is to argue about it with cited facts.
+
+**How do you make a verdict reproducible?** The packet is frozen and fingerprinted; resumes use the stored packet;
+signals are pure functions, so the same packet always yields the same facts.
+
+**How would you evaluate it?** Hallucinated-figure rate (validator rejections per answer), how often the skeptic
+contradicts the computed attribution, and verdict stability when the agents are re-run on the same frozen packet.
+
+**Why polling and not WebSockets for generation progress?** State changes every few seconds and must survive a
+refresh; polling a stored record is simpler, cacheable and resilient, and the stored state is the source of truth.
+
+**How is a visitor debate protected from abuse and cost?** Validation, per-IP and global caps, a kill switch,
+idempotent submission, content filtering, unlisted ids, and admin-only triggers for the scheduled jobs.
+
+**What would you do next?** Accounts (saved debates are per browser today), a real fact-checking step before any
+"verified" label, rupee-priced gold and a contract-roll check for futures, an evaluation dashboard, and moving the
+content filter out of process.
+
+### Updated honest limits
+- The news and visitor debates run on AWS behind the custom domain. The Markets **live data providers and real-model
+  answers were not verified before deployment** (tested with a synthetic fixture and a stubbed model); verify them
+  on the first live run and say so in interviews.
+- Yahoo's chart endpoint is unofficial and NSE may block automated requests; FRED needs a free key.
+- Commodity prices are front-month futures, which roll to the next contract; a roll can look like a one-day jump.
+- No user accounts; "my debates" and saved debates live in each browser.
+
+### Updated 3-minute demo
+1. **Markets page:** the sources table (which feeds worked), the domestic-vs-imported bars, then open an agent's
+   **audit trail** and show a rejected attempt and its reason. *"The model cannot publish a number that isn't in
+   the data."*
+2. **New debate:** type a question, show the honest progress, then the claim labels and the disagreement map.
+3. **Code:** `markets/validator.py` (one rule), `markets/signals.py` (the attribution), and one test
+   (`test_the_retry_edge_sends_the_rejection_reason_back`).
+4. **Ops:** the CI run with the Trivy step, and the architecture diagram in section 15.
