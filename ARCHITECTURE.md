@@ -682,3 +682,5 @@ uses the validated analysts. Resuming reuses the stored packet, so a reproducibl
 Attribution lags the US-session factors (dollar index, Brent, gold, copper, US 10-year) by one trading day because India closes before
 the US session; USD/INR is same-day. The fit is a ridge regression over the trailing 60 days, and confidence is never
 reported above "moderate". Redis keys: `market:{date}` (hash), `market:index` (sorted set), `market:flows` (hash).
+
+**Stalled job recovery**: If the server restarts mid-job, any debate stuck in `"generating"` state is repaired on read: unfinished analysts are marked `failed` and the job lock is released, so the page never spins forever. Use `Retry` on the page to re-run. This mirrors the visitor-debate reconciliation logic in `userdebate/pipeline.py::reconcile_stalled`.

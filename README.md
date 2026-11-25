@@ -280,13 +280,16 @@ India time after the close (`MARKETS_SCHEDULE_HOUR/MINUTE`) or on demand with `P
    into "imported" (USD/INR, and the previous US session's dollar index, Brent, gold, copper and US yields) and
    "unexplained", and a rule-based regime label (gold up and copper down lean risk-off; the reverse leans risk-on). Confidence is capped at "moderate": it is association, not proof of cause.
 3. **Freeze** the packet with a SHA-256 fingerprint. A finished day is never regenerated; an unfinished one resumes
-   from its stored packet; `force=true` starts over.
+   from its stored packet; `force=true` starts over. The packet hash ensures reproducibility: same data → same facts.
 4. **Debate**: Bull and Bear in parallel, then the Macro Skeptic (whose only job is domestic-vs-imported), then a
    moderator.
 5. **Validator with a retry edge** (`markets/validator.py`): every claim must cite existing fact ids, every figure it
    quotes must appear in a cited fact, unconditional price predictions are rejected, and the skeptic must cite the
    attribution fact and may not flatly contradict it. A rejected answer goes back to the agent with the exact reasons
    (up to `MARKETS_MAX_ATTEMPTS`); every attempt is stored and shown in the page's audit trail.
+6. **Stalled job recovery**: If the server restarts mid-job, any debate stuck in `"generating"` state is repaired on
+   read: unfinished analysts are marked `failed` and the job lock is released, so the page never spins forever. Use
+   `Retry` on the page to re-run.
 
 Commodity prices come from front-month futures (`BZ=F`, `CL=F`, `GC=F`, `SI=F`, `HG=F`, `NG=F`), which roll to the next
 contract periodically; a roll can show up as a one-day jump that is not a real price move, so treat a sudden large
